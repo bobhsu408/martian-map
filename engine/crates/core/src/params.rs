@@ -1,0 +1,46 @@
+//! 任務參數（全部可調；簡報時說明這些是假設值）。
+
+use serde::Serialize;
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MissionParams {
+    /// 超過此坡度視為不可通行（穿太空衣步行的保守上限）
+    pub slope_max_deg: f32,
+    /// 平地步行速度（m/s）
+    pub walk_speed_mps: f32,
+    /// 太空衣 O2 容量（分鐘）
+    pub o2_capacity_min: f32,
+    /// 返回基地時必須保留的 O2（分鐘）
+    pub o2_reserve_min: f32,
+    /// 地表輻射劑量基準（mSv/天），Curiosity RAD 量級
+    pub dose_msv_per_day: f32,
+}
+
+impl Default for MissionParams {
+    fn default() -> Self {
+        Self { slope_max_deg: 25.0, walk_speed_mps: 1.0, o2_capacity_min: 480.0, o2_reserve_min: 30.0, dose_msv_per_day: 0.7 }
+    }
+}
+
+/// 把實數編碼成 API 的 u8：0–254 線性對應 [min, max]，255 保留給「不可通行／無資料」。
+#[inline]
+pub fn encode_u8(v: f32, min: f32, max: f32) -> u8 {
+    if !v.is_finite() {
+        return 255;
+    }
+    (((v - min) / (max - min)).clamp(0.0, 1.0) * 254.0).round() as u8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encoding() {
+        assert_eq!(encode_u8(0.0, 0.0, 45.0), 0);
+        assert_eq!(encode_u8(45.0, 0.0, 45.0), 254);
+        assert_eq!(encode_u8(90.0, 0.0, 45.0), 254);
+        assert_eq!(encode_u8(f32::INFINITY, 0.0, 45.0), 255);
+        assert_eq!(encode_u8(22.5, 0.0, 45.0), 127);
+    }
+}

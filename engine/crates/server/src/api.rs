@@ -1,0 +1,169 @@
+//! HTTP 路由與處理函式（契約：docs/API.md）。
+
+use crate::state::AppState;
+use axum::{
+    extract::{Path, Query, State},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
+    routing::get,
+    Json, Router,
+};
+use mars_core::{params::encode_u8, Grid};
+use serde::Deserialize;
+use serde_json::json;
+use std::{path::PathBuf, sync::Arc};
+use tower_http::{cors::CorsLayer, services::ServeDir};
+
+type St = State<Arc<AppState>>;
+
+pub fn router(st: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
+    let api = Router::new()
+        .route("/api/meta", get(meta))
+        .route("/api/terrain", get(terrain))
+        .route("/api/layer/{name}", get(layer))
+        .with_state(st)
+        .layer(CorsLayer::permissive());
+    match web_dir {
+        Some(dir) if dir.exists() => api.fallback_service(ServeDir::new(dir)),
+        _ => api,
+    }
+}
+
+// ---------- 錯誤 ----------
+
+pub struct ApiError {
+    status: StatusCode,
+    code: &'static str,
+    message: String,
+}
+
+impl ApiError {
+    pub fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
+        Self { status, code, message: message.into() }
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (self.status, Json(json!({"error": self.code, "message": self.message}))).into_response()
+    }
+}
+
+// ---------- 二進位網格回應 ----------
+
+fn grid_response(w: usize, h: usize, cell_m: f32, body: Vec<u8>) -> Response {
+    let mut hm = HeaderMap::new();
+    hm.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
+    hm.insert("x-width", HeaderValue::from(w));
+    hm.insert("x-height", HeaderValue::from(h));
+    hm.insert("x-cell-m", HeaderValue::from_str(&cell_m.to_string()).unwrap());
+    hm.insert(header::ACCESS_CONTROL_EXPOSE_HEADERS, HeaderValue::from_static("x-width, x-height, x-cell-m"));
+    (hm, body).into_response()
+}
+
+fn u8_layer(g: &Grid<f32>, step: usize, min: f32, max: f32) -> Response {
+    let d = g.downsample(step);
+    let body = d.data.iter().map(|&v| encode_u8(v, min, max)).collect();
+    grid_response(d.w, d.h, d.cell_m, body)
+}
+
+// ---------- handlers ----------
+
+async fn meta(State(st): St) -> Json<serde_json::Value> {
+    let w = &st.world;
+    let (z_min, z_max) = w.dem.min_max();
+    Json(json!({
+        "name": w.name,
+        "source": w.source,
+        "width": w.dem.w, "height": w.dem.h, "cell_m": w.dem.cell_m,
+        "z_min": z_min, "z_max": z_max,
+        "base": [w.base.0, w.base.1],
+        "targets": w.targets,
+        "params": st.params,
+        "layers": {
+            "slope":  {"unit": "deg", "min": 0, "max": 45},
+            "rough":  {"unit": "m",   "min": 0, "max": 2},
+            "hazard": {"unit": "bool"},
+            "cost":   {"unit": "rel", "min": 1, "max": 20},
+            "pnr":    {"unit": "bool"},
+            "svf":    {"unit": "ratio", "min": 0, "max": 1}
+        }
+    }))
+}
+
+#[derive(Deserialize)]
+struct StepQ {
+    step: Option<usize>,
+}
+
+async fn terrain(State(st): St, Query(q): Query<StepQ>) -> Response {
+    let d = st.world.dem.downsample(q.step.unwrap_or(4).clamp(1, 64));
+    grid_response(d.w, d.h, d.cell_m, d.to_le_bytes())
+}
+
+#[derive(Deserialize)]
+struct LayerQ {
+    step: Option<usize>,
+}
+
+async fn layer(State(st): St, Path(name): Path<String>, Query(q): Query<LayerQ>) -> Result<Response, ApiError> {
+    let step = q.step.unwrap_or(1).clamp(1, 64);
+    match name.as_str() {
+        "slope" => Ok(u8_layer(&st.slope, step, 0.0, 45.0)),
+        "rough" => Ok(u8_layer(&st.rough, step, 0.0, 2.0)),
+        _ => Err(ApiError::new(StatusCode::NOT_FOUND, "unknown_layer", format!("layer '{name}' not available"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use http_body_util::BodyExt;
+    use mars_core::synth::{generate, SynthSpec};
+    use tower::ServiceExt;
+
+    fn app() -> Router {
+        let world = generate(&SynthSpec { w: 128, h: 96, cell_m: 4.0, seed: 1 });
+        router(Arc::new(AppState::from_world(world)), None)
+    }
+
+    async fn get_raw(uri: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
+        let res = app().oneshot(Request::get(uri).body(Body::empty()).unwrap()).await.unwrap();
+        let (status, headers) = (res.status(), res.headers().clone());
+        (status, headers, res.into_body().collect().await.unwrap().to_bytes().to_vec())
+    }
+
+    #[tokio::test]
+    async fn meta_shape() {
+        let (s, _, b) = get_raw("/api/meta").await;
+        assert_eq!(s, StatusCode::OK);
+        let v: serde_json::Value = serde_json::from_slice(&b).unwrap();
+        assert_eq!(v["width"], 128);
+        assert_eq!(v["height"], 96);
+        assert!(v["targets"].as_array().unwrap().len() >= 1);
+        assert!(v["params"]["slope_max_deg"].is_number());
+    }
+
+    #[tokio::test]
+    async fn terrain_binary_length_matches_headers() {
+        let (s, h, b) = get_raw("/api/terrain?step=4").await;
+        assert_eq!(s, StatusCode::OK);
+        let w: usize = h["x-width"].to_str().unwrap().parse().unwrap();
+        let hh: usize = h["x-height"].to_str().unwrap().parse().unwrap();
+        assert_eq!((w, hh), (32, 24));
+        assert_eq!(b.len(), w * hh * 4);
+    }
+
+    #[tokio::test]
+    async fn layer_slope_and_unknown() {
+        let (s, _, b) = get_raw("/api/layer/slope").await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(b.len(), 128 * 96);
+        let (s, _, b) = get_raw("/api/layer/nope").await;
+        assert_eq!(s, StatusCode::NOT_FOUND);
+        let v: serde_json::Value = serde_json::from_slice(&b).unwrap();
+        assert_eq!(v["error"], "unknown_layer");
+    }
+}

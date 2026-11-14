@@ -2,6 +2,7 @@
 
 pub mod edt;
 pub mod grid;
+pub mod params;
 pub mod synth;
 pub mod terrain;
 pub mod world;
