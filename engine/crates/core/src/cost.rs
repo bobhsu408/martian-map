@@ -74,16 +74,15 @@ pub struct HazardThresholds {
 /// - 用 `Grid::from_vec(w, h, cell_m, data)` 組回網格。
 /// - 思考：25° 這個數字從哪來？粗糙度門檻要怎麼對應「一顆跨不過去的石頭」？
 pub fn hazard_mask(slope: &Grid<f32>, rough: &Grid<f32>, th: HazardThresholds) -> Grid<bool> {
-    let _ = (slope, rough, th);
-    let mut hazard = Grid::new(21, 21, 1.0, false);
-    fn lower_than(dem: &Grid<f32>) -> Grid<bool> {
-        let data: Vec<bool> = dem.data
-            .iter()
-            .map(|&v| v > -4400.0)
-            .collect();
-        Grid::from_vec(dem.width, dem.height, dem.cell_m, data)
+    let data: Vec<bool> = slope
+        .data
+        .iter()
+        .zip(&rough.data)          // 同時走坡度和粗糙度兩張圖
+        .map(|(&s, &r)| s > th.slope_max_deg || r > th.rough_max_m)       // s = 這格的坡度，r = 這格的粗糙度
+        .collect();
+    Grid::from_vec(slope.w, slope.h, slope.cell_m, data)
+}
 
-    }
 
 /// TODO(團隊)：科學價值場（0–1）：靠近科學目標的格子分數高。
 ///
