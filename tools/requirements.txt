@@ -1,0 +1,4 @@
+# Only needed to regenerate data/processed/ from raw NASA files (tools/*.py).
+# Running the web app does NOT need Python.
+numpy>=1.24
+Pillow>=10.0

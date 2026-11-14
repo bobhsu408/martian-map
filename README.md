@@ -85,7 +85,9 @@ martian-map/
 
 ## 快速開始：地圖展示
 
-需求：Node.js 18 以上、Python 3.10 以上與 NumPy。
+需求：只要 Node.js 18 以上。
+
+> Python 只用於「一次性資料前處理」：從 NASA 原始檔重新產生 `data/processed/`（`tools/*.py`，套件見 `tools/requirements.txt`：`pip install -r tools/requirements.txt`）。處理好的資料已放在 repo 裡，**執行網頁不需要 Python**。
 
 ### 1. 安裝前端 dependency
 
@@ -214,19 +216,23 @@ python tools\preprocess.py `
 
 ## 執行模式
 
-### Local DEM viewer（目前預設）
+### WASM 規劃引擎（預設）
 
 ```text
 http://localhost:5173/
 ```
 
-使用 JavaScript 直接讀取 processed DEM，適合現在的地圖展示工作，不需要 Rust toolchain。
+預設模式：Rust `mars-core` 編成 WebAssembly，在瀏覽器的 Web Worker 裡計算路線與 EVA 導航。
 
-### WASM engine
+### Local DEM viewer（`?viewer`）
 
 ```text
-http://localhost:5173/?wasm
+http://localhost:5173/?viewer
 ```
+
+使用 JavaScript 直接讀取 processed DEM，適合現在的地圖展示工作，不需要 Rust toolchain。
+
+### WASM engine 說明
 
 目前 `web/src/wasm/` 已包含建好的 WASM runtime。此模式會在 Web Worker 中載入真實的 `data/processed/meta.json` 與 `dem.f32`，使用 Rust `mars-core` 計算坡度、粗糙度、危險區、三種路線與 EVA 導航，不需要在執行時安裝 `cargo` 或 `rustc`。
 
@@ -339,6 +345,7 @@ NASA Space Apps Challenge 2026 project for the challenge "Interplanetary Surviva
 
 - engine/ is a Rust workspace: mars-core = algorithms; mars-wasm = WebAssembly build that runs the whole engine inside the browser (Web Worker); mars-server = optional axum HTTP server on 127.0.0.1:8080
 - web/ is a Vite + Three.js front-end
+- tools/*.py (Python + NumPy + Pillow) are one-time data-preprocessing scripts that turn raw NASA PDS files into data/processed/; they are not needed to run the app (see tools/requirements.txt)
 - docs/API.md is the API contract
 
 ## Run
