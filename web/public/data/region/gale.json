@@ -1,0 +1,12 @@
+{
+  "cell_m": 463.0935415503709,
+  "format": "int16 little-endian, metres, row 0 = south",
+  "height": 512,
+  "lat_max": -3.3984375,
+  "lat_min": -7.3984375,
+  "lon_max": 139.4,
+  "lon_min": 135.4,
+  "name": "Gale crater region (MOLA)",
+  "source": "NASA MGS MOLA global DEM 463 m (USGS Astrogeology mosaic), rows/cols cropped",
+  "width": 512
+}

@@ -24,7 +24,7 @@ function wasmBackend() {
   });
   return {
     kind: 'wasm',
-    ready: () => call('ready'),
+    ready: (args) => call('ready', args),
     meta: () => call('meta'),
     terrain: (step) => call('terrain', { step }),
     layer: (name, query) => call('layer', { name, query }),
@@ -52,7 +52,7 @@ function httpBackend(base = '') {
   const qs = (q) => Object.entries(q || {}).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
   return {
     kind: 'server',
-    ready: async () => ({ build_ms: 0 }),
+    ready: async () => ({ build_ms: 0, source: 'server' }),
     meta: () => json('/api/meta'),
     terrain: (step) => grid(`/api/terrain?step=${step}`, true),
     layer: (name, query) => grid(`/api/layer/${name}?${qs(query)}`, false),

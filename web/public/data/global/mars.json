@@ -1,0 +1,8 @@
+{
+  "format": "int16 little-endian, metres, row 0 = north (90°N), col 0 = 180°W",
+  "height": 720,
+  "name": "Mars global topography (MOLA)",
+  "radius_m": 3396190.0,
+  "source": "NASA MGS MOLA global DEM 463 m (USGS Astrogeology mosaic), every 32nd sample",
+  "width": 1440
+}

@@ -29,18 +29,16 @@
       </section>
 
       <section>
-        <label>Map layer</label>
-        <select id="layer">
-          <option value="none">Terrain only</option>
-          <option value="slope">Slope (°)</option>
-          <option value="hazard">Hazards (no-go)</option>
-          <option value="cost:safe">Penalty cost — safe</option>
-          <option value="cost:science">Penalty cost — science</option>
-          <option value="coverage">Beacon coverage</option>
-          <option value="pnr">Point-of-no-return safe zone</option>
-        </select>
-        <div id="legend" class="legend"></div>
-        <div id="legend-text" class="legend-text"></div>
+        <label>Map layers (stack several)</label>
+        <div id="layers"></div>
+        <div id="legend-box"></div>
+      </section>
+
+      <section>
+        <label>View distance <span id="vd-text"></span></label>
+        <input type="range" id="view-dist" min="0" max="6" step="1" value="2" />
+        <div class="hint">Near: 2 m HiRISE site · Far: 463 m MOLA Gale crater region</div>
+        <button id="globe">🌍 Mars globe (MOLA)</button>
       </section>
 
       <section>

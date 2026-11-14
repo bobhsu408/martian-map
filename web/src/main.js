@@ -7,6 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { createBackend } from './api.js';
 import { Feedback } from './feedback.js';
+import { buildRegion, buildGlobe, geoToSite } from './views.js';
 
 const MESH_STEP = 2; // 地形 mesh 取樣（2 → 4 m 網格）
 const EXAG = 1.3; // 垂直誇張
@@ -19,13 +20,14 @@ const api = createBackend();
 // ---------------------------------------------------------------- state
 const S = {
   meta: null, terr: null, hazard: null, slope: null, rough: null, W: 0, H: 0, zmid: 0,
-  goal: null, routes: {}, selected: null, obstacles: [], layer: 'none',
+  goal: null, routes: {}, selected: null, obstacles: [], geo: null, region: null, globe: null, inGlobe: false,
+  layers: {}, layerCache: {},
   eva: null, // 進行中的 EVA
 };
 
 // ---------------------------------------------------------------- scene
 const host = $('scene');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 host.appendChild(renderer.domElement);
 const labels = new CSS2DRenderer();
@@ -36,7 +38,7 @@ const scene = new THREE.Scene();
 scene.background = skyTexture();
 const FOG_PLAN = new THREE.Fog('#7a5038', 3500, 9000), FOG_EVA = new THREE.Fog('#b88a63', 250, 2200);
 scene.fog = FOG_PLAN;
-const camera = new THREE.PerspectiveCamera(50, 1, 1, 20000);
+const camera = new THREE.PerspectiveCamera(50, 1, 1, 600000);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.48;
@@ -137,50 +139,119 @@ function scatterRocks() {
   scene.add(mesh);
 }
 
-const LAYER_STYLE = {
-  slope: { ramp: ['#2e7d32', '#f2c94c', '#ff5a36', '#7a0c0c'], legend: ['0°', '22°', '45°'] },
-  hazard: { ramp: ['#000000', '#ff2a2a'], alphaFromValue: true, legend: ['passable', 'no-go'] },
-  cost: { ramp: ['#1b5e20', '#f2c94c', '#ff5a36', '#4a0000'], legend: ['cheap', 'expensive', '∞'] },
-  coverage: { ramp: ['#ff3b30', '#f2c94c', '#3fd17a', '#2ec4ff'], legend: ['0 beacons', '1–2', '3+'] },
-  pnr: { ramp: ['#ff3b30', '#3fd17a'], legend: ['beyond PNR', 'safe to reach & return'] },
-};
+// 可疊加的圖層：由下往上依序混色，每層有自己的透明度
+const LAYERS = [
+  { id: 'slope', name: 'Slope (°)', ramp: ['#2e7d32', '#f2c94c', '#ff5a36', '#7a0c0c'], legend: ['0°', '22°', '45°'] },
+  { id: 'cost:safe', name: 'Penalty cost — safe', ramp: ['#1b5e20', '#f2c94c', '#ff5a36', '#4a0000'], legend: ['cheap', 'expensive', '∞'] },
+  { id: 'cost:science', name: 'Penalty cost — science', ramp: ['#1b5e20', '#f2c94c', '#ff5a36', '#4a0000'], legend: ['cheap', 'expensive', '∞'] },
+  { id: 'coverage', name: 'Beacon coverage', ramp: ['#ff3b30', '#f2c94c', '#3fd17a', '#2ec4ff'], legend: ['0 beacons', '1–2', '3+'] },
+  { id: 'pnr', name: 'Point-of-no-return zone', ramp: ['#ff3b30', '#3fd17a'], legend: ['beyond PNR', 'safe to reach & return'], dynamic: true },
+  { id: 'hazard', name: 'Hazards (no-go)', ramp: ['#000000', '#ff2a2a'], legend: ['passable', 'no-go'], mask: true },
+];
 function rampColor(ramp, t, out) {
   const n = ramp.length - 1, x = Math.min(Math.max(t, 0), 1) * n, i = Math.min(Math.floor(x), n - 1);
   return out.set(ramp[i]).lerp(new THREE.Color(ramp[i + 1]), x - i);
 }
-async function applyLayer() {
-  const [kind, mode] = S.layer.split(':');
-  const colors = terrainMesh.geometry.attributes.color;
-  if (kind === 'none') {
-    colors.array.set(baseColors);
-    colors.needsUpdate = true;
-    $('legend').style.background = 'none';
-    $('legend-text').innerHTML = '';
-    return;
-  }
+async function layerData(L) {
+  const [kind, mode] = L.id.split(':');
+  if (!L.dynamic && S.layerCache[L.id]) return S.layerCache[L.id];
   const q = { step: MESH_STEP };
   if (kind === 'cost') q.mode = mode;
   if (kind === 'pnr') {
     const p = S.eva ? S.eva.est : { x: S.meta.base[0], y: S.meta.base[1] };
     Object.assign(q, { x: p.x, y: p.y, o2_min: S.eva ? S.eva.o2 : S.meta.params.o2_capacity_min });
   }
-  const L = await api.layer(kind, q);
-  const st = LAYER_STYLE[kind], { w, h } = S.terr, c = new THREE.Color(), base = new THREE.Color();
-  for (let r = 0; r < h; r++) for (let col = 0; col < w; col++) {
-    const k = r * w + col, v = L.data[(h - 1 - r) * w + col];
-    base.fromArray(baseColors, k * 3);
-    let a = 0.6, t;
-    if (st.alphaFromValue) a = v > 127 ? 0.8 : 0;
-    if (kind === 'coverage') t = Math.min((v / 254) * 6, 3) / 3; // 0..6 個信標 → 0..1（3 個以上算滿）
-    else if (kind === 'pnr' || kind === 'hazard') t = v / 255;
-    else t = v === 255 ? 1 : v / 254;
-    rampColor(st.ramp, t, c);
-    base.lerp(c, a);
-    colors.setXYZ(k, base.r, base.g, base.b);
+  const g = await api.layer(kind, q);
+  if (!L.dynamic) S.layerCache[L.id] = g;
+  return g;
+}
+async function applyLayers() {
+  const colors = terrainMesh.geometry.attributes.color;
+  const out = Float32Array.from(baseColors);
+  const { w, h } = S.terr, c = new THREE.Color(), base = new THREE.Color();
+  const legends = [];
+  for (const L of LAYERS) {
+    const st = S.layers[L.id];
+    if (!st.on) continue;
+    const g = await layerData(L);
+    const kind = L.id.split(':')[0];
+    for (let r = 0; r < h; r++) for (let col = 0; col < w; col++) {
+      const k = r * w + col, v = g.data[(h - 1 - r) * w + col];
+      let a = st.opacity, t;
+      if (L.mask) { if (v <= 127) continue; t = 1; }
+      else if (kind === 'coverage') t = Math.min((v / 254) * 6, 3) / 3; // 0..6 個信標，3 個以上算滿
+      else if (kind === 'pnr') t = v / 255;
+      else t = v === 255 ? 1 : v / 254;
+      rampColor(L.ramp, t, c);
+      base.fromArray(out, k * 3).lerp(c, a);
+      out[k * 3] = base.r; out[k * 3 + 1] = base.g; out[k * 3 + 2] = base.b;
+    }
+    legends.push(`<div class="legend-item"><div class="name">${L.name}</div><div class="bar" style="background:linear-gradient(90deg,${L.ramp.join(',')})"></div><div class="legend-text">${L.legend.map((x) => `<span>${x}</span>`).join('')}</div></div>`);
   }
+  colors.array.set(out);
   colors.needsUpdate = true;
-  $('legend').style.background = `linear-gradient(90deg, ${st.ramp.join(',')})`;
-  $('legend-text').innerHTML = st.legend.map((s) => `<span>${s}</span>`).join('');
+  $('legend-box').innerHTML = legends.join('');
+}
+function buildLayerPanel() {
+  const box = $('layers');
+  for (const L of LAYERS) {
+    S.layers[L.id] = { on: false, opacity: L.mask ? 0.85 : 0.6 };
+    const row = document.createElement('div');
+    row.className = 'layer-row';
+    row.innerHTML = `<input type="checkbox" id="ly-${L.id}"><label for="ly-${L.id}" class="check" style="margin:0">${L.name}</label><input type="range" min="0.1" max="1" step="0.05" value="${S.layers[L.id].opacity}" title="opacity">`;
+    const [cb, , op] = row.children;
+    cb.onchange = () => { S.layers[L.id].on = cb.checked; applyLayers().catch((e) => log(e.message, 'bad')); };
+    op.oninput = () => { S.layers[L.id].opacity = +op.value; if (S.layers[L.id].on) applyLayers(); };
+    box.appendChild(row);
+  }
+}
+const pnrOn = () => S.layers.pnr && S.layers.pnr.on;
+
+// ---------------------------------------------------------------- view distance / multi-scale
+const VIEW_KM = [1, 2.5, 6, 20, 60, 150, 300];
+function setViewDistance(idx) {
+  const km = VIEW_KM[idx];
+  $('vd-text').textContent = `· ${km} km`;
+  const far = km * 1000;
+  FOG_PLAN.near = far * 0.55; FOG_PLAN.far = far * 1.1;
+  FOG_EVA.near = Math.min(250, far * 0.3); FOG_EVA.far = Math.max(far * 0.9, 600);
+  controls.maxDistance = Math.max(far * 0.8, 3000);
+  if (S.region) S.region.mesh.visible = km > 3 && !S.inGlobe;
+}
+
+async function toggleGlobe() {
+  if (!S.globe) {
+    $('globe').disabled = true;
+    try {
+      const lat = S.geo ? (S.geo.lat_min + S.geo.lat_max) / 2 : -4.88, lon = S.geo ? (S.geo.lon_min + S.geo.lon_max) / 2 : 137.37;
+      S.globe = await buildGlobe(lat, lon);
+      S.globe.globe.position.set(0, -2e6, 0); // 放在場景下方很遠處，避免和地表重疊
+      S.globe.globe.scale.setScalar(1);
+      scene.add(S.globe.globe);
+    } finally { $('globe').disabled = false; }
+  }
+  S.inGlobe = !S.inGlobe;
+  const g = S.globe;
+  g.globe.visible = S.inGlobe;
+  for (const o of siteObjects()) o.visible = !S.inGlobe;
+  if (S.region) S.region.mesh.visible = !S.inGlobe && VIEW_KM[+$('view-dist').value] > 3;
+  scene.fog = S.inGlobe ? null : (S.eva ? FOG_EVA : FOG_PLAN);
+  scene.background = S.inGlobe ? new THREE.Color('#05060a') : skyTexture();
+  $('globe').textContent = S.inGlobe ? '⤶ Back to EVA site' : '🌍 Mars globe (MOLA)';
+  if (S.inGlobe) {
+    S.savedCam = { pos: camera.position.clone(), target: controls.target.clone(), maxD: controls.maxDistance, polar: controls.maxPolarAngle };
+    const c = g.globe.position, d = g.siteDir;
+    controls.maxDistance = 30000; controls.maxPolarAngle = Math.PI;
+    controls.target.copy(c);
+    camera.position.copy(c).add(d.clone().multiplyScalar(g.R * 2.6));
+    log('Globe view: NASA MOLA topography, 12× vertical exaggeration; the blue pin marks the EVA site in Gale crater', 'ok');
+  } else if (S.savedCam) {
+    camera.position.copy(S.savedCam.pos); controls.target.copy(S.savedCam.target);
+    controls.maxDistance = S.savedCam.maxD; controls.maxPolarAngle = S.savedCam.polar;
+  }
+}
+function siteObjects() {
+  return scene.children.filter((o) => o !== (S.globe && S.globe.globe) && o !== (S.region && S.region.mesh) && !o.isLight);
 }
 
 // ---------------------------------------------------------------- markers & beacons
@@ -368,7 +439,7 @@ function startEva() {
     drift: null, returning: false, done: false, replanning: false, lastReplan: 0,
   };
   astro.visible = estMarker.visible = true;
-  scene.fog = FOG_EVA;
+  if (!S.inGlobe) scene.fog = FOG_EVA;
   $('hud').classList.remove('hidden');
   $('dpad').classList.remove('hidden');
   ['start', 'plan'].forEach((id) => ($(id).disabled = true));
@@ -566,7 +637,7 @@ async function doReplan(reasonText) {
       showAlert('NEW ROUTE COMPUTED ON-BOARD', false, 3000);
     }
     e.nav = null;
-    if (S.layer === 'pnr') applyLayer();
+    if (pnrOn()) applyLayers();
   } catch (err) {
     log(`Re-plan failed: ${err.message}`, 'bad');
   } finally {
@@ -646,7 +717,7 @@ function reset() {
   $('plan').disabled = false;
   ['start', 'rockfall', 'leak', 'drift', 'home'].forEach((id) => ($(id).disabled = true));
   overviewCamera();
-  if (S.layer === 'pnr') applyLayer();
+  if (pnrOn()) applyLayers();
   log('Reset');
 }
 
@@ -688,7 +759,10 @@ renderer.domElement.addEventListener('pointerup', (e) => {
 // ---------------------------------------------------------------- boot
 async function boot() {
   const t0 = performance.now();
-  const { build_ms } = await api.ready();
+  const params = new URLSearchParams(location.search);
+  const info = await api.ready({ siteBase: new URL('data/site/', location.href).href, synthetic: params.has('synthetic') });
+  const build_ms = info.build_ms;
+  S.geo = info.geo || null;
   $('loading-text').textContent = 'Loading terrain…';
   S.meta = await api.meta();
   [S.terr, S.hazard, S.slope, S.rough] = await Promise.all([
@@ -701,6 +775,16 @@ async function boot() {
   scatterRocks();
   addMarkers();
   overviewCamera();
+  buildLayerPanel();
+  if (S.geo) {
+    try {
+      S.region = await buildRegion(S.geo, toV, S.W, S.H);
+      scene.add(S.region.mesh);
+    } catch (e) { log(`Regional map unavailable: ${e.message}`, 'warn'); }
+  }
+  $('view-dist').oninput = (e) => setViewDistance(+e.target.value);
+  setViewDistance(+$('view-dist').value);
+  $('globe').onclick = () => toggleGlobe().catch((e) => log(`Globe failed: ${e.message}`, 'bad'));
 
   const sel = $('target');
   for (const t of S.meta.targets) sel.add(new Option(`${t.name} (science ${t.science})`, t.id));
@@ -714,7 +798,6 @@ async function boot() {
   sel.onchange = pick;
   pick();
 
-  $('layer').onchange = (e) => { S.layer = e.target.value; applyLayer().catch((err) => log(err.message, 'bad')); };
   $('plan').onclick = planRoutes;
   $('start').onclick = startEva;
   $('rockfall').onclick = rockfall;
@@ -724,7 +807,9 @@ async function boot() {
   $('reset').onclick = reset;
   const th = S.meta.thresholds;
   $('source').innerHTML = `Terrain: ${S.meta.source}<br>No-go thresholds: slope &gt; ${th.slope_max_deg.toFixed(0)}°, roughness &gt; ${th.rough_max_m.toFixed(2)} m.<br>`
-    + `Engine: ${api.kind === 'wasm' ? 'WebAssembly in this browser' : 'local mars-server'} — no network link required.<br>Beacon ranges are simulated from the terrain model.`;
+    + `Engine: ${api.kind === 'wasm' ? 'WebAssembly in this browser' : 'local mars-server'} — no network link required.<br>`
+    + (S.region ? 'Regional context: NASA MGS MOLA 463 m (Gale crater). ' : '')
+    + 'Beacon ranges are simulated from the terrain model; science stops are auto-selected candidates.';
   $('loading').classList.add('done');
   log(`Loaded ${S.meta.name} (${S.meta.width}×${S.meta.height} @ ${S.meta.cell_m} m); engine ready in ${(build_ms || performance.now() - t0).toFixed(0)} ms`, 'ok');
 }
@@ -734,10 +819,15 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   if (S.eva) evaTick(dt);
   controls.update();
+  // 拉遠時隱藏 3D 標籤，避免全部擠在一起
+  labels.domElement.style.display = S.inGlobe || camera.position.distanceTo(controls.target) > 9000 ? 'none' : '';
   renderer.render(scene, camera);
   labels.render(scene, camera);
 });
 boot().catch((e) => { $('loading-text').textContent = `Failed to load: ${e.message}`; console.error(e); });
 
 // e2e 測試用
-window.__mm = { S, api };
+window.__mm = {
+  S, api,
+  zoomOut: () => { camera.position.set(controls.target.x - 30000, 45000, controls.target.z + 60000); },
+};
