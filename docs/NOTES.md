@@ -121,3 +121,10 @@
 | 沒有 GPS 怎麼知道自己在哪？ | §6 | |
 | 為什麼偏離 15 m 還要再加「> 2σ」的條件？ | §7 | |
 | 為什麼不只用螢幕，還要震動和聲音？ | §8 | |
+| 地圖上看得到輻射嗎？劑量怎麼算的？ | 下方「參考要點」 | |
+| 為什麼用 Rust？ | 下方「參考要點」 | |
+
+### 參考要點（SI 整理，回答請用自己的話寫在上表）
+- **輻射**：沒有輻射分布圖（火星表面沒有這種地圖資料）。路線卡的 Dose = EVA 時間 × 地表平均劑量率 0.7 mSv/天（好奇號 RAD 量級），程式在 `eva.rs` 的 `dose_msv`。是**模型估算**，不要說「地圖顯示輻射」。未來工作：地形遮蔽（懸崖、坑壁下方受到的輻射較少）。
+  - 英文：Terrain hazards come from real NASA HiRISE topography. Radiation dose is estimated from Curiosity's RAD average surface dose rate and the EVA duration; terrain shielding is future work.
+- **Rust**：離線（同一份程式編成 WebAssembly 在瀏覽器跑，也能編成 server，未來可放進太空衣／探測車電腦）、要快（約 100 萬格地形，瀏覽器內三條路線約 0.9 秒，沒有 GC 卡頓）、要可靠（編譯時擋掉記憶體錯誤，加上 44 個自動測試，A* 跟 `pathfinding` 套件比對）。Python 只用於一次性資料前處理。
