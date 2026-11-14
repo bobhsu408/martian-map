@@ -39,4 +39,5 @@ NASA Space Apps 規定提交時必須完整揭露 AI（官方稱 Super Intellige
 | 11/14 | Claude Code | 查詢並下載真實 NASA 資料（HiRISE DTM 索引搜尋 Gale 地區 27 個 DTM、以 HTTP range 只下載需要的部分：HiRISE 2 km 區塊、MOLA Gale 區域與全球降採樣）；撰寫 Rust 前處理工具（自動挑選基地／候選科學點／信標）；前端改為可疊加多圖層、視距滑桿、三層尺度（現場 2 m → Gale 463 m → 全火星） | 團隊要求「全火星可探索、靠近才渲染、類似 Minecraft 可調顯示範圍」與多圖層疊加；授權依硬碟空間自行決定下載資料 |
 | 11/14 | Claude Code | 合併組員 yifyu1122 的 `mod1`：保留其全部資料前處理工具（HiRISE／MOLA／Viking Python 腳本）、文件與處理後資料；前端以 WASM 規劃引擎為預設，並把組員設計的 2D 地圖模式、HiRISE 正射影像、Viking 全球衛星圖移植進來（組員的純 JS 地圖檢視模式保留在 `?viewer`）；在組員的 HiRISE 地形上自動配置基地／科學點／信標；README 合併 | **組員 yifyu1122 親自完成**：HiRISE（DTEEC_001488_1750）與 MOLA、Viking 資料的下載與前處理、資料驗證工具、2D/3D 地圖模式與全球／Mount Sharp 切換的設計與實作、中文 README |
 
+| 2026-11-14 23:00 | Claude Code | 介面簡化：首次說明、3 步驟流程（目標→路線→EVA）、進階選項收進「More」 | 隊員回報看不懂介面、決定簡化方向並驗收畫面 |
 <!-- 之後每一步都往下新增一列 -->

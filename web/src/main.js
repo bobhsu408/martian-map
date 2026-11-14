@@ -357,7 +357,9 @@ function setGoal(x, y, name) {
     scene.add(goalMarker);
   }
   goalMarker.position.copy(groundV(x, y, 12));
+  if (!S.eva && Object.keys(S.routes).length) { clearRoutes(); $('routes').innerHTML = ''; S.selected = null; $('start').disabled = true; }
   log(`Goal set: ${name}`);
+  if ($('step1')) updateSteps();
 }
 
 // 太空人（真實位置）、估計位置 + 不確定圈、信標連線
@@ -422,23 +424,40 @@ function selectRoute(key) {
   for (const [k, r] of Object.entries(S.routes)) r.mesh.material.opacity = k === key ? 1 : 0.25;
   document.querySelectorAll('.route-card').forEach((c) => c.classList.toggle('selected', c.dataset.key === key));
   $('start').disabled = !key || !!S.eva;
+  updateSteps();
 }
+const ROUTE_TAG = { safe: 'stays far from cliffs and boulders', balanced: 'shorter, moderate risk', science: 'shortest, accepts steeper ground' };
 function card(key, r) {
   const div = document.createElement('div');
   div.className = 'route-card';
   div.dataset.key = key;
   div.style.setProperty('--c', COLORS[key]);
   if (!r) { div.innerHTML = `<h3>${key}</h3><div>No traversable route</div>`; return div; }
-  div.innerHTML = `<h3>${key}</h3>
+  const risk = r.risk < 0.4 ? 'low' : r.risk < 0.7 ? 'medium' : 'high';
+  div.innerHTML = `<div class="line1"><h3>${key}</h3><span class="tag">${ROUTE_TAG[key]}</span></div>
     <div class="stats">
-      <span>Distance ${(r.length_m / 1000).toFixed(2)} km</span><span>ETA ${r.eta_min.toFixed(0)} min</span>
-      <span>Max slope ${r.max_slope_deg.toFixed(0)}°</span><span>Clearance ${r.min_clearance_m.toFixed(0)} m</span>
-      <span>Dose ${r.dose_msv.toFixed(3)} mSv</span><span>Risk ${(r.risk * 100).toFixed(0)}%</span>
+      <span>${(r.length_m / 1000).toFixed(2)} km · ${r.eta_min.toFixed(0)} min</span><span>Risk: <b>${risk}</b> (${(r.risk * 100).toFixed(0)}%)</span>
     </div>
-    <ul class="notes">${r.notes.map((n) => `<li>${n}</li>`).join('')}</ul>`;
-  div.onclick = () => selectRoute(key);
+    <details><summary>details</summary>
+      <div class="stats"><span>Max slope ${r.max_slope_deg.toFixed(0)}°</span><span>Closest hazard ${r.min_clearance_m.toFixed(0)} m</span><span>Dose ${r.dose_msv.toFixed(3)} mSv</span></div>
+      <ul class="notes">${r.notes.map((n) => `<li>${n}</li>`).join('')}</ul>
+    </details>`;
+  div.onclick = (e) => { if (e.target.tagName !== 'SUMMARY') selectRoute(key); };
   return div;
 }
+
+/** 三步驟的狀態：目前在哪一步、哪些已完成、哪些還不能用。 */
+function updateSteps() {
+  const planned = Object.keys(S.routes).length > 0 && !S.eva;
+  const st = (id, cls) => { $(id).classList.remove('current', 'done', 'locked'); if (cls) $(id).classList.add(cls); };
+  if (S.eva) { st('step1', 'done'); st('step2', 'done'); st('step3', 'current'); }
+  else if (planned && S.selected) { st('step1', 'done'); st('step2', 'done'); st('step3', 'current'); }
+  else if (S.goal) { st('step1', 'done'); st('step2', 'current'); st('step3', 'locked'); }
+  else { st('step1', 'current'); st('step2', 'locked'); st('step3', 'locked'); }
+  $('emergency').classList.toggle('hidden', !S.eva);
+  $('plan').textContent = planned ? 'Find routes again' : 'Find routes';
+}
+
 async function planRoutes() {
   if (S.eva) return;
   const t0 = performance.now();
@@ -507,6 +526,7 @@ function startEva() {
   const p = astro.position;
   controls.target.copy(p);
   camera.position.set(p.x - Math.cos(S.eva.heading) * 60, p.y + 35, p.z + Math.sin(S.eva.heading) * 60);
+  updateSteps();
   log(`EVA started on ${S.selected} route — ${$('autopilot').checked ? 'autopilot' : 'manual control (W/A/S/D)'}`, 'ok');
   showAlert(`EVA IN PROGRESS · ${S.selected.toUpperCase()} ROUTE`, true, 2500);
 }
@@ -776,6 +796,8 @@ function reset() {
   ['start', 'rockfall', 'leak', 'drift', 'home'].forEach((id) => ($(id).disabled = true));
   overviewCamera();
   if (pnrOn()) applyLayers();
+  S.selected = null;
+  updateSteps();
   log('Reset');
 }
 
@@ -975,6 +997,15 @@ async function boot() {
     + (S.region ? 'Regional context: NASA MGS MOLA 463 m (Gale crater). ' : '')
     + 'Beacon ranges are simulated from the terrain model; science stops are auto-selected candidates.';
   $('loading').classList.add('done');
+  updateSteps();
+  let seen = false;
+  try { seen = localStorage.getItem('mm_intro_seen') === '1'; } catch { /* storage unavailable */ }
+  if (!seen && !params.has('nointro')) $('intro').classList.remove('hidden');
+  $('intro-ok').onclick = () => {
+    $('intro').classList.add('hidden');
+    feedback.unlockAudio();
+    try { localStorage.setItem('mm_intro_seen', '1'); } catch { /* ignore */ }
+  };
   log(`Loaded ${S.meta.name} (${S.meta.width}×${S.meta.height} @ ${S.meta.cell_m} m); engine ready in ${(build_ms || performance.now() - t0).toFixed(0)} ms`, 'ok');
 }
 

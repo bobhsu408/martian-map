@@ -14,86 +14,104 @@
       <div id="loading-text">Loading HiRISE terrain map…</div>
     </div>
 
+    <!-- 第一次使用的說明 -->
+    <div id="intro" class="hidden">
+      <div class="intro-card">
+        <h2>Plan a safe Marswalk in 3 steps</h2>
+        <ol>
+          <li><b>Pick where to go</b> — a science stop on real NASA HiRISE terrain of Mount Sharp.</li>
+          <li><b>Pick a route</b> — the planner compares a safe, a balanced and a science route.</li>
+          <li><b>Go on EVA</b> — walk the astronaut (W/A/S/D) or use autopilot, then try an emergency.</li>
+        </ol>
+        <p class="hint">Everything runs inside this browser — no network link to Earth needed.</p>
+        <button id="intro-ok" class="primary">Start</button>
+      </div>
+    </div>
+
     <aside id="panel">
       <header>
         <h1>MARTIAN MAP</h1>
-      <div class="sub">Offline Mars map · MOLA global overview + HiRISE local detail</div>
+        <div class="sub">Offline EVA planner for Mars astronauts</div>
         <div class="badge" id="badge">● OFFLINE · ON-BOARD COMPUTE</div>
       </header>
 
-      <section>
-        <label>View mode</label>
-        <div id="view-switch" class="view-switch" role="group" aria-label="Map view mode">
-          <button id="view-3d" type="button" class="view-button active" aria-pressed="true">3D terrain</button>
-          <button id="view-2d" type="button" class="view-button" aria-pressed="false">2D map</button>
-        </div>
-        <div id="view-hint" class="hint">Drag to orbit · wheel to zoom</div>
-      </section>
-
-      <section>
-        <label>Map extent</label>
-        <div id="extent-switch" class="view-switch" role="group" aria-label="Map extent">
-          <button id="extent-global" type="button" class="view-button" aria-pressed="false">Mars global</button>
-          <button id="extent-local" type="button" class="view-button active" aria-pressed="true">Mount Sharp</button>
-        </div>
-        <div class="hint">Global satellite: Viking · terrain: MOLA · local detail: HiRISE</div>
-      </section>
-
-      <section>
-        <label>Science target</label>
+      <section class="step" id="step1">
+        <div class="step-title"><span class="num">1</span> Where to?</div>
         <select id="target"></select>
-        <div class="hint">or click the terrain to set a custom goal</div>
+        <div class="hint">…or click anywhere on the terrain.</div>
         <div id="target-desc" class="desc"></div>
       </section>
 
-      <section>
-        <label>Map layers (stack several)</label>
-        <div id="layers"></div>
-        <div id="legend-box"></div>
-      </section>
-
-      <section>
-        <label>View distance <span id="vd-text"></span></label>
-        <input type="range" id="view-dist" min="0" max="6" step="1" value="2" />
-        <div class="hint">Near: 2 m HiRISE site · Far: 463 m MOLA Gale crater region</div>
-        <button id="globe">🌍 Mars globe (MOLA)</button>
-      </section>
-
-      <section>
-        <button id="plan" class="primary">Plan routes (3 modes)</button>
+      <section class="step" id="step2">
+        <div class="step-title"><span class="num">2</span> Choose a route</div>
+        <button id="plan" class="primary">Find routes</button>
         <div id="routes"></div>
       </section>
 
-      <section id="eva-controls">
-        <button id="start" disabled>▶ Start EVA</button>
-        <label class="check"><input type="checkbox" id="autopilot" /> Autopilot (follow route)</label>
-        <div class="hint">Walk: W/↑ forward · A/D or ←/→ turn · S/↓ back · drag to look around</div>
-        <div class="row">
-          <button id="rockfall" disabled>⚠ Rockfall</button>
-          <button id="drift" disabled>↯ Simulate drift</button>
+      <section class="step" id="step3">
+        <div class="step-title"><span class="num">3</span> Go on EVA</div>
+        <button id="start" class="primary" disabled>▶ Start EVA</button>
+        <label class="check"><input type="checkbox" id="autopilot" checked /> Autopilot (walk the route for me)</label>
+        <div class="hint">Manual: W / ↑ forward · A D / ← → turn · S / ↓ back · drag to look around</div>
+        <div id="emergency" class="hidden">
+          <div class="sub-title">Try an emergency</div>
+          <div class="row">
+            <button id="drift" disabled title="Crew slips 45 m off the route">↯ Drift off route</button>
+            <button id="rockfall" disabled title="A rockfall blocks the path ahead">⚠ Rockfall</button>
+          </div>
+          <div class="row">
+            <button id="leak" disabled title="Suit oxygen leak">O₂ leak</button>
+            <button id="home" disabled title="Plan the safest way back">⌂ Return to base</button>
+          </div>
         </div>
-        <div class="row">
-          <button id="leak" disabled>O₂ leak</button>
-          <button id="home" disabled>⌂ Return to base</button>
-        </div>
-        <button id="reset">Reset</button>
+        <button id="reset" class="ghost">↺ Start over</button>
       </section>
 
       <section>
-        <label>Feedback</label>
-        <div class="row toggles">
-          <label class="check"><input type="checkbox" id="opt-sound" checked /> 🔊 Sound</label>
-          <label class="check"><input type="checkbox" id="opt-vibe" checked /> 📳 Vibration</label>
-        </div>
-        <div class="hint">1 pulse = steer left · 2 pulses = steer right · faster = further off route · long = hazard · SOS = return now</div>
-      </section>
-
-      <section>
-        <label>Mission log</label>
+        <div class="sub-title">Mission log</div>
         <div id="log"></div>
       </section>
 
-      <footer id="source"></footer>
+      <details id="more">
+        <summary>⚙ More: map layers, 2D map, whole Mars, feedback</summary>
+
+        <div class="more-block">
+          <label>Map layers (stack several)</label>
+          <div id="layers"></div>
+          <div id="legend-box"></div>
+        </div>
+
+        <div class="more-block">
+          <label>View</label>
+          <div id="view-switch" class="view-switch" role="group" aria-label="Map view mode">
+            <button id="view-3d" type="button" class="view-button active" aria-pressed="true">3D terrain</button>
+            <button id="view-2d" type="button" class="view-button" aria-pressed="false">2D map</button>
+          </div>
+          <div id="extent-switch" class="view-switch" role="group" aria-label="Map extent" style="margin-top:6px">
+            <button id="extent-local" type="button" class="view-button active" aria-pressed="true">Mount Sharp</button>
+            <button id="extent-global" type="button" class="view-button" aria-pressed="false">Mars global (2D)</button>
+          </div>
+          <div id="view-hint" class="hint">Drag to orbit · wheel to zoom</div>
+          <button id="globe" style="margin-top:6px">🌍 Mars globe (3D)</button>
+        </div>
+
+        <div class="more-block">
+          <label>View distance <span id="vd-text"></span></label>
+          <input type="range" id="view-dist" min="0" max="6" step="1" value="2" />
+          <div class="hint">Far views show the whole Gale crater (NASA MOLA, 463 m).</div>
+        </div>
+
+        <div class="more-block">
+          <label>Guidance feedback</label>
+          <div class="row toggles">
+            <label class="check"><input type="checkbox" id="opt-sound" checked /> 🔊 Sound</label>
+            <label class="check"><input type="checkbox" id="opt-vibe" checked /> 📳 Vibration</label>
+          </div>
+          <div class="hint">1 pulse = steer left · 2 pulses = steer right · faster = further off route · long buzz = hazard · SOS = return now</div>
+        </div>
+
+        <footer id="source"></footer>
+      </details>
     </aside>
 
     <!-- EVA heads-up display -->

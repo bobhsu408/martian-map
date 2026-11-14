@@ -143,3 +143,26 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #globe-ui { position: fixed; top: 16px; left: calc(50% + 180px); transform: translateX(-50%); display: flex; gap: 8px; }
 #globe-ui button { width: auto; padding: 8px 14px; }
 #dpad.hidden, #hud.hidden { display: none; }
+
+/* ---------- 3-step guided panel ---------- */
+.step { border-left: 3px solid transparent; padding-left: 10px; margin-left: -13px; transition: opacity .2s; }
+.step.current { border-left-color: var(--accent); }
+.step.done .num { background: var(--ok); }
+.step.locked { opacity: 0.45; }
+.step-title { font-size: 14px; font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.num { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #111; align-items: center; justify-content: center; font-size: 12px; }
+.sub-title { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin: 10px 0 2px; }
+button.ghost { background: transparent; margin-top: 10px; }
+#step3 > button.primary { margin-bottom: 2px; }
+.route-card .line1 { display: flex; justify-content: space-between; align-items: baseline; }
+.route-card .tag { font-size: 10px; color: var(--muted); }
+.route-card details { margin-top: 4px; color: var(--muted); }
+.route-card summary { cursor: pointer; font-size: 10px; }
+#more { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+#more > summary { cursor: pointer; color: var(--accent); font-size: 12px; }
+.more-block { margin-top: 12px; }
+#intro { position: fixed; inset: 0; z-index: 40; background: rgba(8, 6, 5, 0.72); display: flex; align-items: center; justify-content: center; }
+#intro.hidden { display: none; }
+.intro-card { max-width: 440px; margin: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; font-size: 13px; line-height: 1.5; }
+.intro-card h2 { margin: 0 0 8px; color: var(--accent); font-size: 17px; }
+.intro-card ol { padding-left: 18px; }
