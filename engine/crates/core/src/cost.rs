@@ -54,7 +54,7 @@ impl CostWeights {
     pub fn for_mode(mode: Mode) -> Self {
         match mode {
             Mode::Safe => Self { w_slope: 4.0, w_rough: 2.0, w_buf: 6.0, sigma_m: 20.0, w_sci: 0.2, min_cost: 0.1 },
-            Mode::Balanced => Self { w_slope: 2.5, w_rough: 1.2, w_buf: 3.0, sigma_m: 12.0, w_sci: 0.5, min_cost: 0.1 },
+            Mode::Balanced => Self { w_slope: 2.5, w_rough: 1.2, w_buf: 4.5, sigma_m: 16.0, w_sci: 0.5, min_cost: 0.1 },
             Mode::Science => Self { w_slope: 1.2, w_rough: 0.4, w_buf: 1.2, sigma_m: 8.0, w_sci: 0.9, min_cost: 0.1 },
         }
     }
