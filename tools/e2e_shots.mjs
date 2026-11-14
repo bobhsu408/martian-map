@@ -57,6 +57,9 @@ try {
   await click('extent-global');
   await sleep(4000);
   await shot('02c_map2d_global.png');
+  await click('extent-regional');
+  await new Promise((r) => setTimeout(r, 1500));
+  await shot('02d_map2d_regional.png');
   await click('extent-local');
   await click('view-3d');
   await sleep(1500);

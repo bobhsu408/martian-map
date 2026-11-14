@@ -2,22 +2,23 @@
 
 火星全球／Mount Sharp 的離線地圖展示與 EVA 路徑規劃原型。
 
-目前專案使用 NASA Viking global color mosaic 建立整個火星的衛星式總覽，使用 NASA MOLA 作為全球高程資料，再用真實 NASA HiRISE DTM 與正射影像提供 Mount Sharp 的高解析度局部細節；並保留未來接上 Rust、WebAssembly、Axum 與太空人導航演算法的架構。
+目前專案使用 NASA Viking global color mosaic 建立整個火星的衛星式總覽，使用 NASA MOLA 作為全球高程資料，再用真實 NASA HiRISE DTM 與正射影像提供 Mount Sharp 的高解析度局部細節；WASM 已接上 Rust `mars-core`，可在瀏覽器中使用真實局部 DEM 執行路徑規劃與 EVA 導航。
 
 ## 目前可以做什麼
 
 - 使用真實 HiRISE DTM 顯示 Mount Sharp 局部地形。
 - 3D terrain 模式：旋轉、平移、縮放，觀察立體高程。
-- 2D map 模式：類似 Google Maps 的俯視閱讀方式，可拖曳平移與滾輪縮放，北方固定朝上。
+- 2D map 模式：類似 Google Maps 的單一火星座標地圖，可拖曳平移與滾輪縮放，北方固定朝上。
 - 切換 Terrain、Slope、Hazard 等圖層。
 - 使用 HiRISE 正射影像作為衛星式地表底圖。
 - 使用 NASA MOLA 全球高程與彩色陰影地形作為整個火星的總覽底圖。
 - 使用 NASA Viking merged color mosaic 作為全球衛星式底圖。
-- 2D 模式可切換 `Mars global` 與 `Mount Sharp`；全球模式支援滑鼠拖曳、滾輪縮放與東西方向無縫循環。
+- 2D 模式把 `Mars global`、`Gale MOC` 與 `Mount Sharp` 疊在同一個 simple cylindrical 座標系；按鈕只是快速跳到不同縮放層，不會切換成三張互不相干的地圖。
+- 全球模式支援滑鼠拖曳、滾輪縮放與東西方向無縫循環；放大到 Gale 後可繼續看到 MOC，再放大到 Mount Sharp 時可看到 HiRISE 正射影像與導航路線。
 - 離線載入 `data/processed`，不需要連線到 NASA API。
-- 保留 Rust/WASM/Axum 後端介面，未來可接回 A*、坡度、粗糙度、PNR 與 route planner。
+- Rust/WASM/Axum 共用 A*、坡度、粗糙度、PNR 與 route planner 介面；目前瀏覽器 WASM 已能執行真實 HiRISE DEM 的導航。
 
-目前 2D/3D 地圖展示不需要 `cargo` 或 `rustc`。路徑規劃與完整 EVA 模擬仍需要 Rust/WASM engine。
+目前 2D/3D 地圖展示不需要 `cargo` 或 `rustc`；使用已建好的 `?wasm` 版本進行路徑規劃也不需要執行時安裝 Rust。只有重新編譯 WASM 或啟動 Axum server 時才需要 Rust toolchain。
 
 ## 技術架構
 
@@ -44,6 +45,13 @@ tools/preprocess.py
             ├── ortho.jpg
             ├── valid_mask.u8
             └── meta.json
+
+NASA MGS/MOC Atlas regional tile
+        │
+        ▼
+tools/preprocess_moc.py
+        │
+        └── data/processed/regional/moc.jpg
                 │
                 ▼
         Vite + Three.js frontend
@@ -69,6 +77,7 @@ martian-map/
 │   ├── preprocess.py              # HiRISE .IMG → processed data
 │   ├── preprocess_mola.py         # MOLA 全球 .IMG → global package
 │   ├── preprocess_viking.py       # Viking global tiles → satellite.jpg
+│   ├── preprocess_moc.py          # MOC regional tile → moc.jpg
 │   └── validate_processed.py      # 資料完整性與座標方向驗證
 ├── engine/                        # Rust core / WASM / Axum
 └── web/                           # Vite + Three.js frontend
@@ -113,7 +122,7 @@ http://localhost:5173/
 2. 3D 模式拖曳旋轉、滾輪縮放。
 3. 2D 模式拖曳平移、滾輪縮放，北方固定朝上。
 4. 用 `Map layer` 切換地形或坡度圖層。
-5. 在 `Map extent` 選 `Mars global` 看整個火星，選 `Mount Sharp` 回到 HiRISE 局部細節。
+5. 在 `Map extent` 依序選 `Mars global`、`Gale MOC` 或 `Mount Sharp`；這三層分別是全球總覽、區域 orbital context 與公尺級局部 DEM。
 
 ### 4. 建立 production build
 
@@ -123,7 +132,7 @@ npm run build
 npm run preview
 ```
 
-Vite build 會將局部與 `data/processed/global/` 內的 `meta.json`、`dem.f32`、`ortho.jpg`、`satellite.jpg`、`valid_mask.u8` 打包到 `dist/data/`。原始 `.IMG` 不會被複製到前端。
+Vite build 會將局部、全球與 `data/processed/regional/` 內的地圖資產打包到 `dist/data/`。原始 `.IMG`、大型原始 PNG 不會被複製到前端。
 
 ## 全球火星資料
 
@@ -150,6 +159,17 @@ python tools\preprocess_mola.py `
 ```
 
 此輸出供全球瀏覽與定位使用；不可直接當成太空人尺度的路徑規劃網格。正式導航仍應切換到具有公尺級 DEM 的 HiRISE／CTX 局部資料。
+
+### Gale 區域 MOC context
+
+Mount Sharp 位於約 `137.3°E, 4.8°S`，本專案下載涵蓋 `120–150°E, 30°S–0°` 的 NASA MGS/MOC Atlas tile，並輸出為 `data/processed/regional/moc.jpg`。這一層是介於全球 Viking 與局部 HiRISE 之間的視覺與地理定位層，不直接提供公尺級路徑規劃 DEM。
+
+```powershell
+python tools\preprocess_moc.py `
+  --input data\raw\official\moc\moc_256_N-30_120.png `
+  --output data\processed\regional `
+  --force
+```
 
 重新產生全球衛星式底圖：
 
@@ -208,7 +228,16 @@ http://localhost:5173/
 http://localhost:5173/?wasm
 ```
 
-需要先建立 `web/src/wasm/` 相關 WASM 檔案。此模式預留給完整的 Rust `mars-core` 路徑規劃與 EVA 模擬。
+目前 `web/src/wasm/` 已包含建好的 WASM runtime。此模式會在 Web Worker 中載入真實的 `data/processed/meta.json` 與 `dem.f32`，使用 Rust `mars-core` 計算坡度、粗糙度、危險區、三種路線與 EVA 導航，不需要在執行時安裝 `cargo` 或 `rustc`。
+
+使用方式：
+
+1. 切換到 `Mount Sharp` 局部範圍。
+2. 點擊局部 DEM 設定導航目標。
+3. 按 `Plan routes (3 modes)` 比較 Safe、Balanced、Science 路線。
+4. 選擇路線後按 `Start EVA`；可開啟 Autopilot，或使用方向鍵／WASD 移動。
+
+`Mars global` 與 `Gale MOC` 是定位與上下文影像層，不會在低解析度資料上誤算太空人尺度路徑；必須切回 `Mount Sharp` 才能規劃路線。
 
 ### Axum server
 
@@ -269,8 +298,8 @@ cargo test
 
 - 目前地圖展示已使用真實 HiRISE DEM。
 - 全球 `Mars global` 已使用 Viking merged color mosaic 作為衛星式底圖，並支援水平無縫循環。
-- 全球底圖仍是低解析度總覽；目前尚不是 CTX/HiRISE 級別的全球光學瓦片。
-- 目前 local viewer 的 route planner 按鈕會停用。
+- 全球底圖仍是低解析度總覽；Gale MOC 是區域 context，尚不是 CTX/HiRISE 級別的全球光學瓦片。
+- `?wasm` 模式已能使用真實 HiRISE DEM 執行路徑規劃與 EVA 導航；不帶參數的 local viewer 仍只負責展示與圖層瀏覽。
 - `valid_mask.u8` 尚未被 Rust core 讀取。
 - 尚未接入 CTX／HRSC 全球或區域光學影像瓦片，也尚未建立真正的多解析度 tile pyramid。
 
@@ -278,8 +307,8 @@ cargo test
 
 1. 安裝 Rust toolchain，驗證 `World::load_processed`。
 2. 讓 `valid_mask.u8` 進入 hazard 計算。
-3. 接回 Rust/WASM route planner。
-4. 加入 CTX／HRSC 區域光學影像與多解析度瓦片，提高全球縮放後的細節。
+3. 讓 `valid_mask.u8` 進入 WASM/Rust hazard 計算，並補上無效區域測試。
+4. 加入 CTX 全球 mosaic 的按需瓦片，提高全球縮放後的細節。
 
 詳細資料執行狀態請看：[HiRISE 前處理企畫書](docs/HIRISE_PREPROCESS_PLAN.md)。
 

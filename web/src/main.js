@@ -171,6 +171,19 @@ async function buildGlobalMap() {
     globalMapMeshes.push(pin);
     scene.add(pin);
   }
+  // Gale 一帶的 MOC 區域鑲嵌圖（組員的資料，經度 120–150°E、緯度 30°S–0°），疊在全球圖上
+  try {
+    const moc = await new THREE.TextureLoader().loadAsync('data/regional/moc.jpg');
+    moc.colorSpace = THREE.SRGBColorSpace;
+    moc.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const rg = new THREE.PlaneGeometry(30, 30, 1, 1);
+    rg.rotateX(-Math.PI / 2);
+    const rm = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ map: moc }));
+    rm.position.set(135 - 180, -3999.5, 15);
+    rm.visible = false;
+    globalMapMeshes.push(rm);
+    scene.add(rm);
+  } catch (e) { log(`Gale MOC map unavailable (${e.message})`, 'warn'); }
   S.hasGlobalMap = true;
 }
 
@@ -827,15 +840,17 @@ function createMapCamera() {
   mapControls.enabled = false;
   fitMapCamera();
 }
-const mapIsGlobal = () => S.mapExtent === 'global' && S.hasGlobalMap;
+const mapIsGlobal = () => S.mapExtent !== 'local' && S.hasGlobalMap;
+const mapIsRegional = () => S.mapExtent === 'regional' && S.hasGlobalMap;
 function fitMapCamera() {
   const aspect = innerWidth / innerHeight;
-  const [w, h] = mapIsGlobal() ? [360, 180] : [S.W, S.H];
+  const [w, h] = mapIsRegional() ? [30, 30] : mapIsGlobal() ? [360, 180] : [S.W, S.H];
   const ext = Math.max(h / 2, w / (2 * aspect)) * 1.08;
   Object.assign(mapCamera, { left: -ext * aspect, right: ext * aspect, top: ext, bottom: -ext });
   mapCamera.updateProjectionMatrix();
 }
 function mapCenter() {
+  if (mapIsRegional()) return new THREE.Vector3(innerWidth > 700 ? -49 : -45, -4000, 15);
   return mapIsGlobal() ? new THREE.Vector3(innerWidth > 700 ? -45 : 0, -4000, 0) : new THREE.Vector3(innerWidth > 700 ? -S.W * 0.16 : 0, -2000, 0);
 }
 function syncMapVisibility() {
@@ -886,10 +901,13 @@ async function setMapExtent(extent) {
   if (extent === 'global' && !S.hasGlobalMap) {
     try { await buildGlobalMap(); } catch (e) { log(`Global map unavailable: ${e.message}`, 'warn'); }
   }
-  S.mapExtent = extent === 'global' && S.hasGlobalMap ? 'global' : 'local';
-  const g = S.mapExtent === 'global';
-  ['extent-global', 'extent-local'].forEach((id) => {
-    const on = (id === 'extent-global') === g;
+  if (extent === 'regional' && !S.hasGlobalMap) {
+    try { await buildGlobalMap(); } catch (e) { log(`Global map unavailable: ${e.message}`, 'warn'); }
+  }
+  S.mapExtent = extent !== 'local' && S.hasGlobalMap ? extent : 'local';
+  const g = S.mapExtent !== 'local';
+  ['extent-global', 'extent-regional', 'extent-local'].forEach((id) => {
+    const on = id === `extent-${S.mapExtent}`;
     $(id).classList.toggle('active', on);
     $(id).setAttribute('aria-pressed', String(on));
   });
@@ -967,6 +985,7 @@ async function boot() {
   $('view-3d').onclick = () => setViewMode('3d');
   $('view-2d').onclick = () => setViewMode('2d');
   $('extent-global').onclick = () => setMapExtent('global');
+  $('extent-regional').onclick = () => setMapExtent('regional');
   $('extent-local').onclick = () => setMapExtent('local');
   $('view-dist').oninput = (e) => setViewDistance(+e.target.value);
   setViewDistance(+$('view-dist').value);
@@ -995,6 +1014,7 @@ async function boot() {
   $('source').innerHTML = `Terrain: ${S.meta.source}<br>No-go thresholds: slope &gt; ${th.slope_max_deg.toFixed(0)}°, roughness &gt; ${th.rough_max_m.toFixed(2)} m.<br>`
     + `Engine: ${api.kind === 'wasm' ? 'WebAssembly in this browser' : 'local mars-server'} — no network link required.<br>`
     + (S.region ? 'Regional context: NASA MGS MOLA 463 m (Gale crater). ' : '')
+    + 'Gale regional image: NASA MGS MOC Atlas 256 px/deg. '
     + 'Beacon ranges are simulated from the terrain model; science stops are auto-selected candidates.';
   $('loading').classList.add('done');
   updateSteps();
