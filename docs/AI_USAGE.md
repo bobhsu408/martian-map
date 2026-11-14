@@ -46,5 +46,4 @@ NASA Space Apps 規定提交時必須完整揭露 AI（官方稱 Super Intellige
 | 11/14 | Claude Code | 合併組員 yifyu1122 的 `mod1`：保留其全部資料前處理工具（HiRISE／MOLA／Viking Python 腳本）、文件與處理後資料；前端以 WASM 規劃引擎為預設，並把組員設計的 2D 地圖模式、HiRISE 正射影像、Viking 全球衛星圖移植進來（組員的純 JS 地圖檢視模式保留在 `?viewer`）；在組員的 HiRISE 地形上自動配置基地／科學點／信標；README 合併 | **組員 yifyu1122 親自完成**：HiRISE（DTEEC_001488_1750）與 MOLA、Viking 資料的下載與前處理、資料驗證工具、2D/3D 地圖模式與全球／Mount Sharp 切換的設計與實作、中文 README |
 | 2026-11-14 23:00 | Claude Code | 介面簡化：首次說明、3 步驟流程（目標→路線→EVA）、進階選項收進「More」 | 隊員回報看不懂介面、決定簡化方向並驗收畫面 |
 | 2026-11-14 23:40 | Claude Code | 合併組員 mod 2：保留其 Gale MOC 區域圖、README、前處理工具；修正重複宣告的函式；MOC 圖改成 2D 地圖的第三種範圍 | 組員製作 MOC 區域資料與前處理；我決定合併方式並驗收畫面 |
-| 2026-11-15 | Codex | 新增 `docs/DATA_CATALOG.md`，整理現用 HiRISE DTM／正射影像、MOLA 全球高程與陰影地形、Viking 全球彩色鑲嵌、Gale MOC 區域影像，以及資料格式、解析度、範圍、用途、限制與來源連結 | 使用者要求彙整專案使用資料及簡介；內容依現有檔案與 metadata 編寫，並說明不同資料對導航的適用範圍 |
 <!-- 之後每一步都往下新增一列 -->

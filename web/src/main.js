@@ -190,6 +190,7 @@ async function buildGlobalMap() {
     pin.rotation.x = -Math.PI / 2;
     pin.position.set(lon - 180, 0.03, -lat);
     pin.visible = false;
+    S.sitePin = pin;
     globalMapMeshes.push(pin);
     scene.add(pin);
   }
@@ -895,6 +896,11 @@ function syncMapVisibility() {
   mapMesh.visible = isMap;
   globalMapMeshes.forEach((m) => (m.visible = isMap));
   if (regionalMesh) regionalMesh.visible = isMap;
+  // 現場標記：全球圖用大圓點、區域圖縮小；看現場 HiRISE 圖時隱藏，避免蓋住地圖
+  if (S.sitePin) {
+    S.sitePin.visible = isMap && S.mapExtent !== 'local';
+    S.sitePin.scale.setScalar(S.mapExtent === 'regional' ? 0.25 : 1);
+  }
   if (rockMesh) rockMesh.visible = !isMap;
   astro.visible = !isMap && !!S.eva;
   estMarker.visible = !isMap && !!S.eva;
