@@ -21,6 +21,7 @@ const api = createBackend();
 const S = {
   meta: null, terr: null, hazard: null, slope: null, rough: null, W: 0, H: 0, zmid: 0,
   goal: null, routes: {}, selected: null, obstacles: [], geo: null, region: null, globe: null, inGlobe: false,
+  global: null, regional: null, hasGlobalMap: false,
   view: '3d', mapExtent: 'local', ortho: false,
   layers: {}, layerCache: {},
   eva: null, // 進行中的 EVA
@@ -46,7 +47,7 @@ perspectiveControls.enableDamping = true;
 perspectiveControls.maxPolarAngle = Math.PI * 0.48;
 let controls = perspectiveControls;
 // 2D 地圖模式（組員 yifyu1122 的設計）：正交相機、拖曳平移、北方朝上
-let mapCamera = null, mapControls = null;
+let mapCamera = null, mapControls = null, mapViewExtent = 180;
 scene.add(new THREE.HemisphereLight('#ffd9b8', '#3a1d10', 1.2));
 const sun = new THREE.DirectionalLight('#fff0dc', 2.4);
 sun.position.set(-1500, 1100, 900);
@@ -80,6 +81,25 @@ resize();
 // 公尺座標（x 東、y 北、z 高程）→ three.js（y 朝上、北 = −z）
 const toV = (x, y, z) => new THREE.Vector3(x - S.W / 2, (z - S.zmid) * EXAG, S.H / 2 - y);
 const fromV = (v) => ({ x: v.x + S.W / 2, y: S.H / 2 - v.z });
+function localGeoBounds() {
+  const b = S.meta?.geo || S.meta?.georeference?.crop_bounds_deg;
+  if (b) return {
+    west: b.lon_min ?? b.west, east: b.lon_max ?? b.east,
+    south: b.lat_min ?? b.south, north: b.lat_max ?? b.north,
+  };
+  const centerLon = S.meta?.georeference?.source_center_lon_deg ?? 137.3;
+  const centerLat = S.meta?.georeference?.source_center_lat_deg ?? -4.83;
+  const half = Math.max(S.W, S.H) / 111000 / 2;
+  return { west: centerLon - half, east: centerLon + half, south: centerLat - half, north: centerLat + half };
+}
+function geoV(x, y, lift = 0) {
+  const b = localGeoBounds();
+  return new THREE.Vector3(
+    b.west + (x / S.W) * (b.east - b.west) - 180,
+    lift,
+    -(b.south + (y / S.H) * (b.north - b.south)),
+  );
+}
 
 function heightAt(x, y) {
   const { w, h, data } = S.terr;
@@ -100,7 +120,7 @@ const isHazard = (x, y) => { const v = cellVal(S.hazard, x, y); return v === nul
 const slopeAt = (x, y) => ((cellVal(S.slope, x, y) ?? 0) / 254) * 45;
 
 // ---------------------------------------------------------------- terrain + layers
-let terrainMesh, mapMesh, baseColors, rockMesh;
+let terrainMesh, mapMesh, regionalMesh, baseColors, rockMesh;
 const globalMapMeshes = [];
 function buildTerrain() {
   const { w, h, data } = S.terr;
@@ -125,11 +145,12 @@ function buildTerrain() {
   terrainMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
   scene.add(terrainMesh);
   // 2D 地圖用的平面 mesh（同一套顏色）
-  const mapGeo = new THREE.PlaneGeometry(S.W, S.H, w - 1, h - 1);
+  const bounds = localGeoBounds();
+  const mapGeo = new THREE.PlaneGeometry(bounds.east - bounds.west, bounds.north - bounds.south, w - 1, h - 1);
   mapGeo.rotateX(-Math.PI / 2);
   mapGeo.setAttribute('color', new THREE.BufferAttribute(baseColors.slice(), 3));
   mapMesh = new THREE.Mesh(mapGeo, new THREE.MeshBasicMaterial({ vertexColors: true }));
-  mapMesh.position.y = -2000; // 只在 2D 模式顯示
+  mapMesh.position.set((bounds.west + bounds.east) / 2 - 180, 0.01, -(bounds.south + bounds.north) / 2);
   mapMesh.visible = false;
   scene.add(mapMesh);
 }
@@ -148,7 +169,8 @@ async function loadOrthophoto() {
 
 /** 2D 全球平面地圖：Viking 彩色鑲嵌圖（組員的資料），東西向無縫循環。 */
 async function buildGlobalMap() {
-  const tex = await new THREE.TextureLoader().loadAsync('data/global/satellite.jpg');
+  if (globalMapMeshes.length || !S.global) return;
+  const tex = await new THREE.TextureLoader().loadAsync(S.global.textureUrl);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   const geo = new THREE.PlaneGeometry(360, 180, 1, 1);
@@ -156,7 +178,7 @@ async function buildGlobalMap() {
   const base = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex }));
   for (const offset of [-360, 0, 360]) {
     const m = base.clone();
-    m.position.set(offset, -4000, 0);
+    m.position.set(offset, 0, 0);
     m.visible = false;
     globalMapMeshes.push(m);
     scene.add(m);
@@ -166,25 +188,28 @@ async function buildGlobalMap() {
     const lat = (S.geo.lat_min + S.geo.lat_max) / 2, lon = (S.geo.lon_min + S.geo.lon_max) / 2;
     const pin = new THREE.Mesh(new THREE.CircleGeometry(1.2, 24), new THREE.MeshBasicMaterial({ color: '#4dd6ff' }));
     pin.rotation.x = -Math.PI / 2;
-    pin.position.set(lon - 180, -3999, -lat);
+    pin.position.set(lon - 180, 0.03, -lat);
     pin.visible = false;
     globalMapMeshes.push(pin);
     scene.add(pin);
   }
-  // Gale 一帶的 MOC 區域鑲嵌圖（組員的資料，經度 120–150°E、緯度 30°S–0°），疊在全球圖上
-  try {
-    const moc = await new THREE.TextureLoader().loadAsync('data/regional/moc.jpg');
-    moc.colorSpace = THREE.SRGBColorSpace;
-    moc.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    const rg = new THREE.PlaneGeometry(30, 30, 1, 1);
-    rg.rotateX(-Math.PI / 2);
-    const rm = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({ map: moc }));
-    rm.position.set(135 - 180, -3999.5, 15);
-    rm.visible = false;
-    globalMapMeshes.push(rm);
-    scene.add(rm);
-  } catch (e) { log(`Gale MOC map unavailable (${e.message})`, 'warn'); }
   S.hasGlobalMap = true;
+}
+
+async function buildRegionalMap() {
+  if (!S.regional || regionalMesh) return;
+  const b = S.regional.meta.georeference;
+  const west = b.longitude_bounds_deg[0], east = b.longitude_bounds_deg[1];
+  const south = b.latitude_bounds_deg[0], north = b.latitude_bounds_deg[1];
+  const tex = await new THREE.TextureLoader().loadAsync(S.regional.textureUrl);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const geo = new THREE.PlaneGeometry(east - west, north - south, 1, 1);
+  geo.rotateX(-Math.PI / 2);
+  regionalMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex }));
+  regionalMesh.position.set((west + east) / 2 - 180, 0.005, -(south + north) / 2);
+  regionalMesh.visible = false;
+  scene.add(regionalMesh);
 }
 
 /** 在粗糙度高的地方散佈岩塊（InstancedMesh），讓危險區看得出來。 */
@@ -831,50 +856,53 @@ function showAlert(text, info, ms) {
 }
 // ---------------------------------------------------------------- 2D map mode (ported from teammate's version)
 function createMapCamera() {
-  mapCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 50000);
+  const aspect = innerWidth / innerHeight;
+  mapCamera = new THREE.OrthographicCamera(-mapViewExtent * aspect, mapViewExtent * aspect, mapViewExtent, -mapViewExtent, 0.0001, 100000);
   mapCamera.up.set(0, 0, -1);
   mapControls = new OrbitControls(mapCamera, renderer.domElement);
-  Object.assign(mapControls, { enableDamping: true, enableRotate: false, screenSpacePanning: true, minZoom: 0.75, maxZoom: 40, zoomToCursor: true });
+  Object.assign(mapControls, { enableDamping: true, enableRotate: false, screenSpacePanning: true, minZoom: 0.75, maxZoom: 100000, zoomToCursor: true });
   mapControls.mouseButtons.LEFT = THREE.MOUSE.PAN;
   mapControls.touches.ONE = THREE.TOUCH.PAN;
   mapControls.enabled = false;
   fitMapCamera();
 }
-const mapIsGlobal = () => S.mapExtent !== 'local' && S.hasGlobalMap;
+const mapIsGlobal = () => S.mapExtent === 'global' && S.hasGlobalMap;
 const mapIsRegional = () => S.mapExtent === 'regional' && S.hasGlobalMap;
+function mapExtentInfo() {
+  if (S.mapExtent === 'global' && S.global) return { width: 360, height: 180, centerX: 0, centerZ: 0 };
+  if (S.mapExtent === 'regional' && S.regional) {
+    const b = S.regional.meta.georeference;
+    return { width: b.longitude_bounds_deg[1] - b.longitude_bounds_deg[0], height: b.latitude_bounds_deg[1] - b.latitude_bounds_deg[0], centerX: (b.longitude_bounds_deg[0] + b.longitude_bounds_deg[1]) / 2 - 180, centerZ: -(b.latitude_bounds_deg[0] + b.latitude_bounds_deg[1]) / 2 };
+  }
+  const b = localGeoBounds();
+  return { width: b.east - b.west, height: b.north - b.south, centerX: (b.west + b.east) / 2 - 180, centerZ: -(b.south + b.north) / 2 };
+}
 function fitMapCamera() {
+  if (!mapCamera) return;
   const aspect = innerWidth / innerHeight;
-  const [w, h] = mapIsRegional() ? [30, 30] : mapIsGlobal() ? [360, 180] : [S.W, S.H];
-  const ext = Math.max(h / 2, w / (2 * aspect)) * 1.08;
-  Object.assign(mapCamera, { left: -ext * aspect, right: ext * aspect, top: ext, bottom: -ext });
+  const { width, height } = mapExtentInfo();
+  mapViewExtent = Math.max(height / 2, width / (2 * aspect)) * 1.08;
+  Object.assign(mapCamera, { left: -mapViewExtent * aspect, right: mapViewExtent * aspect, top: mapViewExtent, bottom: -mapViewExtent });
   mapCamera.updateProjectionMatrix();
 }
 function mapCenter() {
-  if (mapIsRegional()) return new THREE.Vector3(innerWidth > 700 ? -49 : -45, -4000, 15);
-  return mapIsGlobal() ? new THREE.Vector3(innerWidth > 700 ? -45 : 0, -4000, 0) : new THREE.Vector3(innerWidth > 700 ? -S.W * 0.16 : 0, -2000, 0);
+  const { centerX, centerZ } = mapExtentInfo();
+  return new THREE.Vector3(centerX, 0, centerZ);
 }
 function syncMapVisibility() {
-  const isMap = S.view === '2d', global = isMap && mapIsGlobal();
+  const isMap = S.view === '2d';
   terrainMesh.visible = !isMap;
-  mapMesh.visible = isMap && !global;
-  // 2D 現場圖：其他物件維持原高度，平面圖放在它們下方，從正上方看位置一致
-  mapMesh.position.y = isMap ? S.meta.z_min - S.zmid - 50 : -2000;
-  globalMapMeshes.forEach((m) => (m.visible = global));
-  // 全球 2D 地圖：暫時隱藏所有現場物件（路線、標記、太空人…），回到現場再還原
-  if (global && !S.hiddenForGlobal) {
-    S.hiddenForGlobal = scene.children.filter((o) => !o.isLight && !globalMapMeshes.includes(o) && o.visible);
-    S.hiddenForGlobal.forEach((o) => (o.visible = false));
-  } else if (!global && S.hiddenForGlobal) {
-    S.hiddenForGlobal.forEach((o) => (o.visible = true));
-    S.hiddenForGlobal = null;
-  }
+  mapMesh.visible = isMap;
+  globalMapMeshes.forEach((m) => (m.visible = isMap));
+  if (regionalMesh) regionalMesh.visible = isMap;
   if (rockMesh) rockMesh.visible = !isMap;
+  astro.visible = !isMap && !!S.eva;
+  estMarker.visible = !isMap && !!S.eva;
+  beaconLines.visible = !isMap;
+  obstacleGroup.visible = !isMap;
+  routeGroup.visible = !isMap;
   if (S.region) S.region.mesh.visible = !isMap && !S.inGlobe && VIEW_KM[+$('view-dist').value] > 3;
-  labels.domElement.style.visibility = global ? 'hidden' : '';
-  terrainMesh.visible = !isMap;
-  mapMesh.visible = isMap && !global;
-  if (rockMesh) rockMesh.visible = !isMap;
-  if (S.region) S.region.mesh.visible = !isMap && !S.inGlobe && VIEW_KM[+$('view-dist').value] > 3;
+  labels.domElement.style.visibility = isMap ? 'hidden' : '';
   // 2D 相機離地很遠，霧會把整張圖蓋掉 → 2D 模式關閉霧
   scene.fog = isMap || S.inGlobe ? null : (S.eva ? FOG_EVA : FOG_PLAN);
 }
@@ -901,11 +929,11 @@ async function setMapExtent(extent) {
   if (extent === 'global' && !S.hasGlobalMap) {
     try { await buildGlobalMap(); } catch (e) { log(`Global map unavailable: ${e.message}`, 'warn'); }
   }
-  if (extent === 'regional' && !S.hasGlobalMap) {
-    try { await buildGlobalMap(); } catch (e) { log(`Global map unavailable: ${e.message}`, 'warn'); }
+  if (extent === 'regional' && !regionalMesh) {
+    try { await buildRegionalMap(); } catch (e) { log(`Regional map unavailable: ${e.message}`, 'warn'); }
   }
   S.mapExtent = extent !== 'local' && S.hasGlobalMap ? extent : 'local';
-  const g = S.mapExtent !== 'local';
+  const g = S.mapExtent === 'global';
   ['extent-global', 'extent-regional', 'extent-local'].forEach((id) => {
     const on = id === `extent-${S.mapExtent}`;
     $(id).classList.toggle('active', on);
@@ -913,7 +941,7 @@ async function setMapExtent(extent) {
   });
   if (S.view !== '2d') setViewMode('2d');
   else { fitMapCamera(); syncMapVisibility(); overviewCamera(); }
-  $('view-hint').textContent = g ? 'Drag to pan · wheel to zoom · east/west wraps' : 'Drag to pan · wheel to zoom · north is up';
+  $('view-hint').textContent = g ? 'Drag to pan · wheel to zoom · east/west wraps' : S.mapExtent === 'regional' ? 'Drag to pan · wheel to zoom · Gale MOC context' : 'Drag to pan · wheel to zoom · north is up';
 }
 /** 全球 2D 地圖東西向無縫循環。 */
 function wrapGlobalMap() {
@@ -928,7 +956,7 @@ function overviewCamera() {
   if (S.view === '2d' && mapCamera) {
     const c = mapCenter();
     mapControls.target.copy(c);
-    mapCamera.position.set(c.x, c.y + 20000, c.z);
+    mapCamera.position.set(c.x, 1000, c.z);
     mapCamera.zoom = 1;
     mapCamera.updateProjectionMatrix();
     mapCamera.lookAt(c);
@@ -936,19 +964,26 @@ function overviewCamera() {
     return;
   }
   const shift = innerWidth > 700 ? -S.W * 0.16 : 0;
-  camera.position.set(shift - S.W * 0.05, S.W * 0.78, S.H * 0.9);
-  controls.target.set(shift, 0, -S.H * 0.04);
+  perspectiveCamera.position.set(shift - S.W * 0.05, S.W * 0.78, S.H * 0.9);
+  perspectiveControls.target.set(shift, 0, -S.H * 0.04);
+  perspectiveControls.update();
 }
 
 let down = null;
 renderer.domElement.addEventListener('pointerdown', (e) => (down = [e.clientX, e.clientY]));
 renderer.domElement.addEventListener('pointerup', (e) => {
-  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5 || S.eva) return;
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5 || S.eva || S.mapExtent !== 'local') return;
   const ray = new THREE.Raycaster();
   ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
-  const hit = ray.intersectObject(terrainMesh)[0];
+  const hit = ray.intersectObject(S.view === '2d' ? mapMesh : terrainMesh)[0];
   if (!hit) return;
-  const p = fromV(hit.point);
+  const p = S.view === '2d' ? (() => {
+    const b = localGeoBounds();
+    return {
+      x: ((hit.point.x + 180 - b.west) / (b.east - b.west)) * S.W,
+      y: ((-hit.point.z - b.south) / (b.north - b.south)) * S.H,
+    };
+  })() : fromV(hit.point);
   $('target').value = 'custom';
   $('target-desc').textContent = `Custom goal at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) m`;
   setGoal(p.x, p.y, `custom point (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) m`);
@@ -970,7 +1005,11 @@ async function boot() {
   S.W = S.meta.width * S.meta.cell_m;
   S.H = S.meta.height * S.meta.cell_m;
   S.zmid = (S.meta.z_min + S.meta.z_max) / 2;
+  S.global = api.globalMap ? await api.globalMap() : null;
+  S.regional = api.regionalMap ? await api.regionalMap() : null;
   buildTerrain();
+  try { await buildGlobalMap(); } catch (e) { log(`Global map unavailable: ${e.message}`, 'warn'); }
+  try { await buildRegionalMap(); } catch (e) { log(`Regional map unavailable: ${e.message}`, 'warn'); }
   scatterRocks();
   addMarkers();
   overviewCamera();

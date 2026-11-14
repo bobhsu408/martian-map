@@ -6,9 +6,31 @@ class EngineError extends Error {
   constructor(e) { super(e.message || e.error); this.code = e.error; }
 }
 
+const jsonAsset = (url, label) => fetch(url).then(async (res) => {
+  if (!res.ok) throw new Error(`cannot load ${label} (${res.status})`);
+  return res.json();
+});
+
+function contextMapApi() {
+  let globalMetaPromise;
+  let regionalMetaPromise;
+  return {
+    globalMap: async () => ({
+      meta: await (globalMetaPromise ??= jsonAsset('data/global/meta.json', 'global MOLA meta.json')),
+      textureUrl: 'data/global/satellite.jpg',
+      reliefTextureUrl: 'data/global/ortho.jpg',
+    }),
+    regionalMap: async () => ({
+      meta: await (regionalMetaPromise ??= jsonAsset('data/regional/meta.json', 'regional MOC meta.json')),
+      textureUrl: 'data/regional/moc.jpg',
+    }),
+  };
+}
+
 function wasmBackend() {
   const worker = new Worker(new URL('./engine.worker.js', import.meta.url), { type: 'module' });
   let seq = 0;
+  let sourceMetaPromise;
   const pending = new Map();
   worker.onmessage = ({ data }) => {
     const p = pending.get(data.id);
@@ -22,10 +44,11 @@ function wasmBackend() {
     pending.set(id, { resolve, reject });
     worker.postMessage({ id, op, args });
   });
+  const sourceMeta = async () => (sourceMetaPromise ??= jsonAsset('data/meta.json', 'HiRISE meta.json'));
   return {
     kind: 'wasm',
     ready: (args) => call('ready', args),
-    meta: () => call('meta'),
+    meta: async () => ({ ...(await call('meta')), georeference: (await sourceMeta()).georeference }),
     terrain: (step) => call('terrain', { step }),
     layer: (name, query) => call('layer', { name, query }),
     route: (req) => call('route', req),
@@ -33,6 +56,7 @@ function wasmBackend() {
     replan: (req) => call('replan', req),
     localize: (req) => call('localize', req),
     track: (req) => call('track', req),
+    ...contextMapApi(),
   };
 }
 
@@ -50,10 +74,12 @@ function httpBackend(base = '') {
     return { w: +res.headers.get('x-width'), h: +res.headers.get('x-height'), cell: +res.headers.get('x-cell-m'), data: f32 ? new Float32Array(buf) : new Uint8Array(buf) };
   };
   const qs = (q) => Object.entries(q || {}).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  let sourceMetaPromise;
+  const sourceMeta = async () => (sourceMetaPromise ??= jsonAsset('data/meta.json', 'HiRISE meta.json'));
   return {
     kind: 'server',
     ready: async () => ({ build_ms: 0, source: 'server' }),
-    meta: () => json('/api/meta'),
+    meta: async () => ({ ...(await json('/api/meta')), georeference: (await sourceMeta()).georeference }),
     terrain: (step) => grid(`/api/terrain?step=${step}`, true),
     layer: (name, query) => grid(`/api/layer/${name}?${qs(query)}`, false),
     route: (req) => json('/api/route', req),
@@ -61,14 +87,13 @@ function httpBackend(base = '') {
     replan: (req) => json('/api/replan', req),
     localize: (req) => json('/api/localize/sim', req),
     track: (req) => json('/api/track', req),
+    ...contextMapApi(),
   };
 }
 
 function localBackend() {
   let metaPromise;
   let demPromise;
-  let globalMetaPromise;
-  let globalDemPromise;
   let derivedPromise;
   const loadMeta = async () => {
     if (!metaPromise) metaPromise = fetch('data/meta.json').then(async (res) => {
@@ -102,20 +127,6 @@ function localBackend() {
       return new Float32Array(buffer);
     });
     return demPromise;
-  };
-  const loadGlobalMeta = async () => {
-    if (!globalMetaPromise) globalMetaPromise = fetch('data/global/meta.json').then(async (res) => {
-      if (!res.ok) throw new Error(`cannot load global MOLA meta.json (${res.status})`);
-      return res.json();
-    });
-    return globalMetaPromise;
-  };
-  const loadGlobalDem = async () => {
-    if (!globalDemPromise) globalDemPromise = fetch('data/global/dem.f32').then(async (res) => {
-      if (!res.ok) throw new Error(`cannot load global MOLA dem.f32 (${res.status})`);
-      return new Float32Array(await res.arrayBuffer());
-    });
-    return globalDemPromise;
   };
   const downsample = (data, width, height, step) => {
     const s = Math.max(1, step | 0);
@@ -159,12 +170,7 @@ function localBackend() {
     kind: 'local',
     ready: async () => ({ build_ms: 0 }),
     meta: loadMeta,
-    globalMap: async () => ({
-      meta: await loadGlobalMeta(),
-      dem: await loadGlobalDem(),
-      textureUrl: 'data/global/satellite.jpg',
-      reliefTextureUrl: 'data/global/ortho.jpg',
-    }),
+    ...contextMapApi(),
     terrain: async (step) => { const m = await loadMeta(); return { ...downsample(await loadDem(), m.width, m.height, step), cell: m.cell_m * Math.max(1, step | 0) }; },
     layer: derived,
     route: unsupported,
