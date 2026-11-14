@@ -1,0 +1,58 @@
+//! 任務場景：DEM + 基地 + 科學目標。可由前處理輸出（data/processed）或合成地形建立。
+
+use crate::grid::Grid;
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Target {
+    pub id: String,
+    pub name: String,
+    pub x: f32,
+    pub y: f32,
+    /// 科學價值 0–1
+    pub science: f32,
+    pub desc: String,
+    #[serde(default)]
+    pub image: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct World {
+    pub name: String,
+    pub source: String,
+    pub dem: Grid<f32>,
+    pub base: (f32, f32),
+    pub targets: Vec<Target>,
+}
+
+/// data/processed/meta.json 的格式（由 tools/preprocess.py 產生）。
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProcessedMeta {
+    pub name: String,
+    pub source: String,
+    pub width: usize,
+    pub height: usize,
+    pub cell_m: f32,
+    pub base: [f32; 2],
+    #[serde(default)]
+    pub targets: Vec<Target>,
+}
+
+impl World {
+    /// 讀取 `<dir>/meta.json` 和 `<dir>/dem.f32`；若有 `<dir>/targets.json` 則覆蓋 meta 內的目標。
+    pub fn load_processed(dir: &Path) -> anyhow::Result<Self> {
+        let meta: ProcessedMeta = serde_json::from_slice(&std::fs::read(dir.join("meta.json"))?)?;
+        let dem = Grid::load_f32(&dir.join("dem.f32"), meta.width, meta.height, meta.cell_m)?;
+        let mut targets = meta.targets;
+        let tpath = dir.join("targets.json");
+        if tpath.exists() {
+            targets = serde_json::from_slice(&std::fs::read(tpath)?)?;
+        }
+        Ok(Self { name: meta.name, source: meta.source, dem, base: (meta.base[0], meta.base[1]), targets })
+    }
+
+    pub fn target(&self, id: &str) -> Option<&Target> {
+        self.targets.iter().find(|t| t.id == id)
+    }
+}

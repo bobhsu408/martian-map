@@ -1,0 +1,12 @@
+# Rust
+engine/target/
+# Node
+web/node_modules/
+web/dist/
+# 原始資料太大，不進 git
+data/raw/
+*.IMG
+*.tif
+*.tiff
+# OS
+.DS_Store

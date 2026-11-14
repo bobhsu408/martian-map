@@ -1,0 +1,107 @@
+//! 由 DEM 推導地形屬性：坡度（Horn 法）與粗糙度（局部起伏）。
+
+use crate::grid::Grid;
+use rayon::prelude::*;
+
+/// 坡度（度）。使用 Horn (1981) 3×3 加權差分；邊緣以夾邊處理。
+pub fn slope_deg(dem: &Grid<f32>) -> Grid<f32> {
+    let (w, h, c) = (dem.w, dem.h, dem.cell_m);
+    let mut out = vec![0.0f32; w * h];
+    out.par_chunks_mut(w).enumerate().for_each(|(j, row)| {
+        let j = j as isize;
+        for (i, o) in row.iter_mut().enumerate() {
+            let i = i as isize;
+            let z = |di: isize, dj: isize| dem.get_clamped(i + di, j + dj);
+            // 東減西
+            let dzdx = ((z(1, 1) + 2.0 * z(1, 0) + z(1, -1)) - (z(-1, 1) + 2.0 * z(-1, 0) + z(-1, -1))) / (8.0 * c);
+            // 北減南（j 由南向北遞增）
+            let dzdy = ((z(-1, 1) + 2.0 * z(0, 1) + z(1, 1)) - (z(-1, -1) + 2.0 * z(0, -1) + z(1, -1))) / (8.0 * c);
+            *o = (dzdx * dzdx + dzdy * dzdy).sqrt().atan().to_degrees();
+        }
+    });
+    Grid::from_vec(w, h, c, out)
+}
+
+/// 3×3 平均（夾邊）。
+fn mean3(g: &Grid<f32>) -> Grid<f32> {
+    let w = g.w;
+    let mut out = vec![0.0f32; g.w * g.h];
+    out.par_chunks_mut(w).enumerate().for_each(|(j, row)| {
+        let j = j as isize;
+        for (i, o) in row.iter_mut().enumerate() {
+            let i = i as isize;
+            let mut s = 0.0;
+            for dj in -1..=1 {
+                for di in -1..=1 {
+                    s += g.get_clamped(i + di, j + dj);
+                }
+            }
+            *o = s / 9.0;
+        }
+    });
+    Grid::from_vec(g.w, g.h, g.cell_m, out)
+}
+
+/// 粗糙度（公尺）：TPI 絕對值 |z − 3×3 平均| 再做一次 3×3 平均。
+/// 平面（任意坡度）的值為 0，所以它量的是「坑坑疤疤」而不是斜度；岩塊、礦脈稜線會很高。
+pub fn roughness(dem: &Grid<f32>) -> Grid<f32> {
+    let m = mean3(dem);
+    let tpi = Grid::from_vec(dem.w, dem.h, dem.cell_m, dem.data.iter().zip(&m.data).map(|(z, mu)| (z - mu).abs()).collect());
+    mean3(&tpi)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plane(w: usize, h: usize, cell: f32, gx: f32, gy: f32) -> Grid<f32> {
+        let mut g = Grid::new(w, h, cell, 0.0);
+        for j in 0..h {
+            for i in 0..w {
+                let (x, y) = g.center(i, j);
+                g.set(i, j, -4500.0 + gx * x + gy * y);
+            }
+        }
+        g
+    }
+
+    #[test]
+    fn flat_is_zero() {
+        let s = slope_deg(&plane(16, 16, 2.0, 0.0, 0.0));
+        assert!(s.data.iter().all(|&v| v.abs() < 1e-4));
+    }
+
+    #[test]
+    fn known_slope_interior() {
+        // tan(θ) = hypot(0.3, 0.4) = 0.5 → θ ≈ 26.565°
+        let s = slope_deg(&plane(20, 20, 1.5, 0.3, 0.4));
+        let expect = 0.5f32.atan().to_degrees();
+        for j in 1..19 {
+            for i in 1..19 {
+                assert!((s.get(i, j) - expect).abs() < 0.1, "({i},{j}) = {}", s.get(i, j));
+            }
+        }
+    }
+
+    #[test]
+    fn north_facing_sign_does_not_matter() {
+        let a = slope_deg(&plane(10, 10, 1.0, 0.0, 0.2));
+        let b = slope_deg(&plane(10, 10, 1.0, 0.0, -0.2));
+        assert!((a.get(5, 5) - b.get(5, 5)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn plane_roughness_zero_and_bump_rough() {
+        let mut g = plane(20, 20, 1.0, 0.2, 0.1);
+        let r = roughness(&g);
+        for j in 2..18 {
+            for i in 2..18 {
+                assert!(r.get(i, j) < 1e-3);
+            }
+        }
+        let z = g.get(10, 10);
+        g.set(10, 10, z + 2.0); // 一顆 2 m 的岩塊
+        let r = roughness(&g);
+        assert!(r.get(10, 10) > 0.3);
+    }
+}

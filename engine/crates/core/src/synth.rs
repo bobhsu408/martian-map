@@ -1,0 +1,257 @@
+//! 合成地形：真實 DTM 到手前用來開發、測試和 demo 的替身。
+//!
+//! 刻意放入幾個「讓路線規劃有戲」的地形特徵：
+//! - 一道東西向的**陡崖**（約 25 m 高），只有兩個缺口：西側的**緩坡**（繞遠但安全）和中央的**陡窄缺口**（近但危險）。
+//! - 幾個**撞擊坑**（坑壁陡）。
+//! - 一片**岩塊區**（粗糙度高）。
+//! - 東北方的 **boxwork 網格狀礦脈稜線**區（科學目標所在）。
+//!
+//! 全部由種子決定，同一個種子永遠產生同一張地圖。
+
+use crate::grid::Grid;
+use crate::world::{Target, World};
+
+#[inline]
+fn hash2(i: i32, j: i32, seed: u32) -> f32 {
+    let mut h = (i as u32).wrapping_mul(0x8da6_b343) ^ (j as u32).wrapping_mul(0xd816_3841) ^ seed.wrapping_mul(0xcb1a_b31f);
+    h ^= h >> 13;
+    h = h.wrapping_mul(0x5bd1_e995);
+    h ^= h >> 15;
+    h as f32 / u32::MAX as f32
+}
+
+#[inline]
+fn smooth(t: f32) -> f32 {
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn value_noise(x: f32, y: f32, seed: u32) -> f32 {
+    let (xi, yi) = (x.floor() as i32, y.floor() as i32);
+    let (tx, ty) = (smooth(x - xi as f32), smooth(y - yi as f32));
+    let a = hash2(xi, yi, seed);
+    let b = hash2(xi + 1, yi, seed);
+    let c = hash2(xi, yi + 1, seed);
+    let d = hash2(xi + 1, yi + 1, seed);
+    let ab = a + (b - a) * tx;
+    let cd = c + (d - c) * tx;
+    ab + (cd - ab) * ty - 0.5
+}
+
+fn fbm(x: f32, y: f32, seed: u32) -> f32 {
+    let (mut amp, mut freq, mut sum) = (1.0, 1.0, 0.0);
+    for o in 0..5 {
+        sum += amp * value_noise(x * freq, y * freq, seed.wrapping_add(o * 101));
+        amp *= 0.5;
+        freq *= 2.0;
+    }
+    sum
+}
+
+#[inline]
+fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+    smooth(((x - e0) / (e1 - e0)).clamp(0.0, 1.0))
+}
+
+#[inline]
+fn gauss(d: f32, sigma: f32) -> f32 {
+    (-(d * d) / (2.0 * sigma * sigma)).exp()
+}
+
+/// 到「間距 spacing、方向 angle_deg 的平行線族」中最近一條線的距離。
+#[inline]
+fn line_family_dist(x: f32, y: f32, angle_deg: f32, spacing: f32) -> f32 {
+    let a = angle_deg.to_radians();
+    let u = -x * a.sin() + y * a.cos(); // 沿法向量的投影
+    let m = u.rem_euclid(spacing);
+    m.min(spacing - m)
+}
+
+pub struct SynthSpec {
+    pub w: usize,
+    pub h: usize,
+    pub cell_m: f32,
+    pub seed: u32,
+}
+
+impl Default for SynthSpec {
+    fn default() -> Self {
+        Self { w: 1024, h: 1024, cell_m: 2.0, seed: 2026 }
+    }
+}
+
+pub fn generate(spec: &SynthSpec) -> World {
+    let SynthSpec { w, h, cell_m, seed } = *spec;
+    let mut dem = Grid::new(w, h, cell_m, 0.0f32);
+    let (wm, hm) = (dem.width_m(), dem.height_m());
+
+    // 地點（相對比例，地圖大小改變時仍合理）
+    let base = (0.15 * wm, 0.12 * hm);
+    let box_c = (0.72 * wm, 0.78 * hm);
+    let box_r = 0.13 * wm.min(hm);
+    let gentle_gap_x = 0.22 * wm; // 西側緩坡缺口
+    let steep_gap_x = 0.55 * wm; // 中央陡窄缺口
+    let scarp_y0 = 0.48 * hm;
+
+    // 撞擊坑：避開基地、目標區和缺口
+    let craters: Vec<(f32, f32, f32, f32)> = (0..10)
+        .filter_map(|k| {
+            let cx = hash2(k, 1, seed) * wm;
+            let cy = hash2(k, 2, seed) * hm;
+            let r = 25.0 + hash2(k, 3, seed) * 70.0;
+            let depth = 0.25 * r;
+            let far = |p: (f32, f32), m: f32| ((cx - p.0).powi(2) + (cy - p.1).powi(2)).sqrt() > r * 1.6 + m;
+            let ok = far(base, 60.0)
+                && far(box_c, box_r)
+                && far((gentle_gap_x, scarp_y0), 120.0)
+                && far((steep_gap_x, scarp_y0), 80.0)
+                && (cy - scarp_y0).abs() > r * 1.5;
+            ok.then_some((cx, cy, r, depth))
+        })
+        .take(6)
+        .collect();
+
+    for j in 0..h {
+        for i in 0..w {
+            let (x, y) = dem.center(i, j);
+            // 1) 往東北方（Mount Sharp）抬升的大尺度趨勢 + 起伏
+            let mut z = -4450.0 + 0.045 * y + 0.015 * x + 14.0 * fbm(x / 420.0, y / 420.0, seed);
+
+            // 2) 陡崖：寬度隨 x 改變，缺口處變寬（坡度變緩）
+            let ys = scarp_y0 + 60.0 * (x / 310.0).sin();
+            let width = 6.0 + 230.0 * gauss(x - gentle_gap_x, 55.0) + 55.0 * gauss(x - steep_gap_x, 18.0);
+            z += 25.0 * smoothstep(-0.5 * width, 0.5 * width, y - ys);
+
+            // 3) 撞擊坑：碗狀 + 坑緣
+            for &(cx, cy, r, d) in &craters {
+                let dist = ((x - cx).powi(2) + (y - cy).powi(2)).sqrt();
+                if dist < r {
+                    z -= d * (1.0 - (dist / r).powi(2));
+                }
+                z += 0.18 * d * gauss(dist - r, 0.22 * r);
+            }
+
+            // 4) Boxwork：兩組交錯的礦脈稜線，只出現在圓形區域內（邊緣漸弱）
+            let db = ((x - box_c.0).powi(2) + (y - box_c.1).powi(2)).sqrt();
+            let fade = 1.0 - smoothstep(0.75 * box_r, box_r, db);
+            if fade > 0.0 {
+                let r1 = gauss(line_family_dist(x, y, 32.0, 38.0), 2.2);
+                let r2 = gauss(line_family_dist(x, y, 118.0, 52.0), 2.2);
+                z += 1.4 * fade * r1.max(r2);
+            }
+            dem.set(i, j, z);
+        }
+    }
+
+    // 5) 岩塊區：基地東北方、中央陡缺口南側（讓直線路線更危險）
+    let field_c = (0.45 * wm, 0.36 * hm);
+    let field_r = 0.1 * wm.min(hm);
+    let cells = (2.0 * field_r / 8.0) as i32;
+    for a in 0..cells {
+        for b in 0..cells {
+            if hash2(a, b, seed ^ 0xb0b) > 0.10 {
+                continue;
+            }
+            let bx = field_c.0 - field_r + (a as f32 + hash2(a, b, seed ^ 7)) * 8.0;
+            let by = field_c.1 - field_r + (b as f32 + hash2(a, b, seed ^ 9)) * 8.0;
+            if ((bx - field_c.0).powi(2) + (by - field_c.1).powi(2)).sqrt() > field_r {
+                continue;
+            }
+            let rad = 2.0 + 2.5 * hash2(a, b, seed ^ 11);
+            let ht = 1.0 + 1.5 * hash2(a, b, seed ^ 13);
+            stamp_boulder(&mut dem, bx, by, rad, ht);
+        }
+    }
+
+    let targets = vec![
+        Target {
+            id: "bx1".into(),
+            name: "Boxwork ridge network (center)".into(),
+            x: box_c.0,
+            y: box_c.1,
+            science: 1.0,
+            desc: "Criss-crossing mineral-vein ridges left by ancient groundwater; primary sampling site.".into(),
+            image: None,
+        },
+        Target {
+            id: "bx2".into(),
+            name: "Boxwork margin outcrop".into(),
+            x: box_c.0 - 0.6 * box_r,
+            y: box_c.1 - 0.55 * box_r,
+            science: 0.7,
+            desc: "Ridge-to-host-rock contact; compare vein and bedrock chemistry.".into(),
+            image: None,
+        },
+        Target {
+            id: "sc1".into(),
+            name: "Scarp layered exposure".into(),
+            x: gentle_gap_x + 140.0,
+            y: scarp_y0 + 60.0 * ((gentle_gap_x + 140.0) / 310.0).sin() + 30.0,
+            science: 0.5,
+            desc: "Exposed sedimentary layers along the scarp face (view from a safe standoff).".into(),
+            image: None,
+        },
+    ];
+
+    World {
+        name: "Synthetic Mount Sharp boxwork site".into(),
+        source: format!("synthetic (seed {seed})"),
+        dem,
+        base,
+        targets,
+    }
+}
+
+fn stamp_boulder(dem: &mut Grid<f32>, bx: f32, by: f32, rad: f32, ht: f32) {
+    let c = dem.cell_m;
+    let (i0, i1) = (((bx - rad) / c).floor() as isize, ((bx + rad) / c).ceil() as isize);
+    let (j0, j1) = (((by - rad) / c).floor() as isize, ((by + rad) / c).ceil() as isize);
+    for j in j0..=j1 {
+        for i in i0..=i1 {
+            if !dem.in_bounds(i, j) {
+                continue;
+            }
+            let (x, y) = dem.center(i as usize, j as usize);
+            let d = ((x - bx).powi(2) + (y - by).powi(2)).sqrt();
+            if d < rad {
+                let k = dem.idx(i as usize, j as usize);
+                dem.data[k] += ht * (1.0 - (d / rad).powi(2)).sqrt();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::terrain::slope_deg;
+
+    fn small() -> World {
+        generate(&SynthSpec { w: 256, h: 256, cell_m: 8.0, seed: 7 })
+    }
+
+    #[test]
+    fn deterministic() {
+        assert_eq!(small().dem.data, small().dem.data);
+    }
+
+    #[test]
+    fn has_steep_and_gentle_terrain() {
+        let w = generate(&SynthSpec::default());
+        let s = slope_deg(&w.dem);
+        let steep = s.data.iter().filter(|&&v| v > 25.0).count();
+        let gentle = s.data.iter().filter(|&&v| v < 10.0).count();
+        assert!(steep > 500, "steep cells = {steep}");
+        assert!(gentle > s.data.len() / 2, "gentle cells = {gentle}");
+    }
+
+    #[test]
+    fn base_and_targets_inside_and_flat_enough() {
+        let w = generate(&SynthSpec::default());
+        let s = slope_deg(&w.dem);
+        let (bi, bj) = w.dem.to_cell(w.base.0, w.base.1).unwrap();
+        assert!(s.get(bi, bj) < 15.0);
+        for t in &w.targets {
+            assert!(w.dem.to_cell(t.x, t.y).is_some(), "{} outside map", t.id);
+        }
+    }
+}
