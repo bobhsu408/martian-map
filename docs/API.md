@@ -1,3 +1,4 @@
+<!-- SI-generated: drafted by Claude Code (SI tool); reviewed and maintained by the team. -->
 # Martian Map Engine — API 契約 v1
 
 後端：`mars-server`（Rust / axum），預設 `http://localhost:8080`。同一個 server 也提供 `web/dist` 靜態檔，**全程離線**。
