@@ -1,0 +1,99 @@
+{
+  "name": "Mars global MOLA overview",
+  "source": "NASA MGS MOLA MEGDR 16 ppd → 4 ppd",
+  "source_url": "https://pds-geosciences.wustl.edu/missions/mgs/megdr.html",
+  "download_url": "https://pds-geosciences.wustl.edu/mgs/mgs-m-mola-5-megdr-l3-v1/mgsl_300x/meg016/",
+  "width": 1440,
+  "height": 720,
+  "cell_m": 14817.845349431858,
+  "base": [
+    180.0,
+    90.0
+  ],
+  "targets": [],
+  "beacons": [],
+  "format": {
+    "dem": "little-endian IEEE-754 float32, row-major, south-first",
+    "valid_mask": "uint8; 255=valid, 0=nodata"
+  },
+  "visual": {
+    "orthophoto": "ortho.jpg",
+    "kind": "MOLA colorized shaded relief",
+    "satellite": "satellite.jpg",
+    "satellite_kind": "NASA Viking merged color mosaic",
+    "satellite_source_url": "https://www.mars.asu.edu/data/mdim_color/",
+    "satellite_tile_url": "https://www.mars.asu.edu/data/mdim_color/large/",
+    "satellite_dimensions": [
+      8192,
+      4096
+    ],
+    "satellite_source_tile_dimensions": [
+      5760,
+      5760
+    ]
+  },
+  "georeference": {
+    "projection": "SIMPLE CYLINDRICAL",
+    "latitude_type": "PLANETOCENTRIC",
+    "positive_longitude_direction": "EAST",
+    "source_resolution_ppd": 16,
+    "resolution_ppd": 4,
+    "cell_deg": 0.25,
+    "display_width_deg": 360.0,
+    "display_height_deg": 180.0,
+    "longitude_bounds_deg": [
+      0.0,
+      360.0
+    ],
+    "latitude_bounds_deg": [
+      -90.0,
+      90.0
+    ],
+    "row_order": "south-first"
+  },
+  "nodata": {
+    "valid_cells": 1036800,
+    "total_cells": 1036800,
+    "valid_fraction": 1.0
+  },
+  "provenance": {
+    "input_file": "D:\\NASAHackathon\\martian-map\\data\\raw\\official\\mola\\meg016\\megt90n000eb.img",
+    "label_file": "D:\\NASAHackathon\\martian-map\\data\\raw\\official\\mola\\meg016\\megt90n000eb.lbl",
+    "input_sha256": "d18d9b9ab8c5516d02e157dd2cde0f1d0d160c21940e953ba22391269a545e7b",
+    "label_sha256": "0f2bd919dddb86d83489a008d3007bd915507c892a0f22ce49ad5dd5d2fc7d8a",
+    "satellite_files": [
+      {
+        "name": "mars45n045.png",
+        "sha256": "a835bde75cda21436bfc79e40f6a70961761a005b083f2f8535d6695f4539254"
+      },
+      {
+        "name": "mars45n135.png",
+        "sha256": "8711a0893721c4b669f5530c5f69b3a55c2548bef63659515936d3c4602c4aeb"
+      },
+      {
+        "name": "mars45n225.png",
+        "sha256": "c543dc9ac550891ac88ed9b56c0020885cc5589b5fb69e5452cf56237f1a1266"
+      },
+      {
+        "name": "mars45n315.png",
+        "sha256": "50885a8faaea544bed8f3886e60499f7288d898d7786dee3ae80bf02940598b8"
+      },
+      {
+        "name": "mars45s045.png",
+        "sha256": "5a79b576aa640817a3e26e46d21628f7c704f5f789b8988fb237d6c6fc631d4a"
+      },
+      {
+        "name": "mars45s135.png",
+        "sha256": "bd2ffb15d412585140e437117c8c840dd582ee99633fbbd8dc024a9860167e0c"
+      },
+      {
+        "name": "mars45s225.png",
+        "sha256": "70da041d3edfe6eb8c3fa4ed3f03257b158c0da9eb47cf979a690b0f3fafc88d"
+      },
+      {
+        "name": "mars45s315.png",
+        "sha256": "a33c3fd202b90908d7a6dffde15c4c2a258250ebacb4fe1f17921c92847bf81d"
+      }
+    ]
+  }
+}

@@ -64,6 +64,122 @@ function httpBackend(base = '') {
   };
 }
 
+function localBackend() {
+  let metaPromise;
+  let demPromise;
+  let globalMetaPromise;
+  let globalDemPromise;
+  let derivedPromise;
+  const loadMeta = async () => {
+    if (!metaPromise) metaPromise = fetch('data/meta.json').then(async (res) => {
+      if (!res.ok) throw new Error(`cannot load local meta.json (${res.status})`);
+      const raw = await res.json();
+      const dem = await loadDem();
+      let zMin = Infinity, zMax = -Infinity;
+      for (const value of dem) if (Number.isFinite(value)) {
+        zMin = Math.min(zMin, value);
+        zMax = Math.max(zMax, value);
+      }
+      return {
+        ...raw,
+        z_min: zMin,
+        z_max: zMax,
+        thresholds: { slope_max_deg: 25, rough_max_m: 1 },
+        params: { o2_capacity_min: 480 },
+        layers: {
+          slope: { unit: 'deg', min: 0, max: 45 },
+          rough: { unit: 'm', min: 0, max: 1 },
+          hazard: { unit: 'bool' },
+        },
+      };
+    });
+    return metaPromise;
+  };
+  const loadDem = async () => {
+    if (!demPromise) demPromise = fetch('data/dem.f32').then(async (res) => {
+      if (!res.ok) throw new Error(`cannot load local dem.f32 (${res.status})`);
+      const buffer = await res.arrayBuffer();
+      return new Float32Array(buffer);
+    });
+    return demPromise;
+  };
+  const loadGlobalMeta = async () => {
+    if (!globalMetaPromise) globalMetaPromise = fetch('data/global/meta.json').then(async (res) => {
+      if (!res.ok) throw new Error(`cannot load global MOLA meta.json (${res.status})`);
+      return res.json();
+    });
+    return globalMetaPromise;
+  };
+  const loadGlobalDem = async () => {
+    if (!globalDemPromise) globalDemPromise = fetch('data/global/dem.f32').then(async (res) => {
+      if (!res.ok) throw new Error(`cannot load global MOLA dem.f32 (${res.status})`);
+      return new Float32Array(await res.arrayBuffer());
+    });
+    return globalDemPromise;
+  };
+  const downsample = (data, width, height, step) => {
+    const s = Math.max(1, step | 0);
+    const w = Math.ceil(width / s), h = Math.ceil(height / s), out = new Float32Array(w * h);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) out[j * w + i] = data[Math.min(j * s, height - 1) * width + Math.min(i * s, width - 1)];
+    return { w, h, data: out, cell: s };
+  };
+  const deriveAll = async () => {
+    const m = await loadMeta(), dem = await loadDem();
+    const { width: w, height: h, cell_m: cell } = m;
+    const slopeGrid = new Uint8Array(w * h);
+    const roughGrid = new Uint8Array(w * h);
+    const hazardGrid = new Uint8Array(w * h);
+    const at = (i, j) => dem[Math.min(Math.max(j, 0), h - 1) * w + Math.min(Math.max(i, 0), w - 1)];
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const center = at(i, j);
+      const dx = (at(i + 1, j) - at(i - 1, j)) / (2 * cell);
+      const dy = (at(i, j + 1) - at(i, j - 1)) / (2 * cell);
+      const slope = Math.atan(Math.hypot(dx, dy)) * 180 / Math.PI;
+      const rough = Math.max(
+        Math.abs(at(i - 1, j) - center), Math.abs(at(i + 1, j) - center),
+        Math.abs(at(i, j - 1) - center), Math.abs(at(i, j + 1) - center),
+      );
+      const k = j * w + i;
+      slopeGrid[k] = Math.min(254, Math.round(slope / 45 * 254));
+      roughGrid[k] = Math.min(254, Math.round(rough / 1 * 254));
+      hazardGrid[k] = slope > 25 || rough > 1 ? 255 : 0;
+    }
+    return { slope: slopeGrid, rough: roughGrid, hazard: hazardGrid, w, h, cell };
+  };
+  const derived = async (kind, query = {}) => {
+    if (!derivedPromise) derivedPromise = deriveAll();
+    const { slope, rough, hazard, w, h, cell } = await derivedPromise;
+    const full = kind === 'slope' ? slope : kind === 'rough' ? rough : hazard;
+    const s = Math.max(1, query.step | 0), ow = Math.ceil(w / s), oh = Math.ceil(h / s), out = new Uint8Array(ow * oh);
+    for (let j = 0; j < oh; j++) for (let i = 0; i < ow; i++) out[j * ow + i] = full[Math.min(j * s, h - 1) * w + Math.min(i * s, w - 1)];
+    return { w: ow, h: oh, cell: cell * s, data: out };
+  };
+  const unsupported = () => Promise.reject(new Error('route planning requires the Rust/WASM engine; this mode is a map viewer'));
+  return {
+    kind: 'local',
+    ready: async () => ({ build_ms: 0 }),
+    meta: loadMeta,
+    globalMap: async () => ({
+      meta: await loadGlobalMeta(),
+      dem: await loadGlobalDem(),
+      textureUrl: 'data/global/satellite.jpg',
+      reliefTextureUrl: 'data/global/ortho.jpg',
+    }),
+    terrain: async (step) => { const m = await loadMeta(); return { ...downsample(await loadDem(), m.width, m.height, step), cell: m.cell_m * Math.max(1, step | 0) }; },
+    layer: derived,
+    route: unsupported,
+    compare: unsupported,
+    replan: unsupported,
+    localize: unsupported,
+    track: unsupported,
+  };
+}
+
 export function createBackend() {
-  return new URLSearchParams(location.search).has('server') ? httpBackend() : wasmBackend();
+  // 預設：WebAssembly 規劃引擎（路線規劃、EVA 都需要它）
+  // ?server：本機 mars-server；?viewer：組員做的純 JS 地圖檢視模式（不含路線規劃）
+  const query = new URLSearchParams(location.search);
+  if (query.has('server')) return httpBackend();
+  if (query.has('viewer')) return localBackend();
+  return wasmBackend();
 }

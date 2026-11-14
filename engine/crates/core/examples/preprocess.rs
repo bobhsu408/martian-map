@@ -47,6 +47,7 @@ fn main() -> anyhow::Result<()> {
     let root = std::env::args().nth(1).unwrap_or_else(|| "..".into());
     let root = Path::new(&root);
     site(root)?;
+    team_site(root)?;
     region(root)?;
     global(root)?;
     Ok(())
@@ -113,6 +114,67 @@ fn site(root: &Path) -> anyhow::Result<()> {
     let (lat_s, lon_e) = hirise_latlon((H_BAND_FIRST_LINE + H_BAND_LINES) as f64, (cs + n) as f64);
     println!("[site] {out_n}x{rows} @ {cell:.3} m, z {zmin:.1}..{zmax:.1} m, holes {holes}");
     println!("[site] lat {lat_s:.5}..{lat_n:.5}, lon {lon_w:.5}..{lon_e:.5}");
+    let source = format!(
+        "NASA/JPL/UArizona HiRISE DTM DTEEC_019698_1750_019988_1750_U01, 2 km crop at {cell:.2} m (lat {lat_s:.4}..{lat_n:.4}, lon {lon_w:.4}..{lon_e:.4})"
+    );
+    place_and_write(
+        grid,
+        [lat_s, lat_n, lon_w, lon_e],
+        "Lower NW Mount Sharp, Gale crater (HiRISE DTM)",
+        &source,
+        &root.join("web/public/data/site_nw"),
+    )
+}
+
+/// 組員用 tools/preprocess.py 產生的 HiRISE 現場（data/processed，有正射影像）→ 2×2 降採樣 → 自動配置 → web/public/data/site
+fn team_site(root: &Path) -> anyhow::Result<()> {
+    let dir = root.join("data/processed");
+    let meta: serde_json::Value = serde_json::from_slice(&fs::read(dir.join("meta.json"))?)?;
+    let (w, h) = (meta["width"].as_u64().unwrap() as usize, meta["height"].as_u64().unwrap() as usize);
+    let cell = meta["cell_m"].as_f64().unwrap() as f32;
+    let raw = Grid::load_f32(&dir.join("dem.f32"), w, h, cell)?;
+    let (ow, oh) = (w / 2, h / 2);
+    let mut data = vec![0.0f32; ow * oh];
+    for j in 0..oh {
+        for i in 0..ow {
+            let (mut s, mut c) = (0.0f32, 0);
+            for dj in 0..2 {
+                for di in 0..2 {
+                    let z = raw.get(i * 2 + di, j * 2 + dj);
+                    if z.is_finite() {
+                        s += z;
+                        c += 1;
+                    }
+                }
+            }
+            data[j * ow + i] = if c > 0 { s / c as f32 } else { f32::NAN };
+        }
+    }
+    for k in 0..data.len() {
+        if !data[k].is_finite() {
+            data[k] = if k > 0 { data[k - 1] } else { 0.0 };
+        }
+    }
+    let grid = Grid::from_vec(ow, oh, cell * 2.0, data);
+    let b = &meta["georeference"]["crop_bounds_deg"];
+    let geo = [b["south"].as_f64().unwrap(), b["north"].as_f64().unwrap(), b["west"].as_f64().unwrap(), b["east"].as_f64().unwrap()];
+    // 降採樣後覆蓋範圍少了最後一列／欄（奇數尺寸時），修正東、北邊界
+    let geo = [geo[0], geo[0] + (geo[1] - geo[0]) * (oh * 2) as f64 / h as f64, geo[2], geo[2] + (geo[3] - geo[2]) * (ow * 2) as f64 / w as f64];
+    let src = meta["source"].as_str().unwrap_or("HiRISE DTM");
+    println!("[team-site] {w}x{h} @ {cell:.3} m → {ow}x{oh} @ {:.3} m", cell * 2.0);
+    place_and_write(
+        grid,
+        geo,
+        "Mount Sharp foothills, Gale crater (HiRISE DTM + orthophoto)",
+        &format!("NASA/JPL/UArizona {src} (team preprocessing), resampled to {:.2} m; lat {:.4}..{:.4}, lon {:.4}..{:.4}", cell * 2.0, geo[0], geo[1], geo[2], geo[3]),
+        &root.join("web/public/data/site"),
+    )
+}
+
+/// 在網格上自動挑選基地、科學點、信標，寫出 engine 格式（dem.f32 + meta.json）。
+fn place_and_write(grid: Grid<f32>, geo: [f64; 4], name: &str, source: &str, out: &Path) -> anyhow::Result<()> {
+    let [lat_s, lat_n, lon_w, lon_e] = geo;
+    let (out_n, rows) = (grid.w, grid.h);
 
     // ---- 自動挑選基地、科學點、信標
     let slope = slope_deg(&grid);
@@ -249,17 +311,14 @@ fn site(root: &Path) -> anyhow::Result<()> {
     let t0 = &targets[0];
     beacons.push(b("uwb_mid", BeaconKind::Uwb, near_free(0.5 * (base.0 + t0.x), 0.5 * (base.1 + t0.y)), "UWB mid-traverse"));
 
-    let out = root.join("web/public/data/site");
-    fs::create_dir_all(&out)?;
+    fs::create_dir_all(out)?;
     fs::write(out.join("dem.f32"), grid.to_le_bytes())?;
     let meta = ProcessedMeta {
-        name: "Lower NW Mount Sharp, Gale crater (HiRISE DTM)".into(),
-        source: format!(
-            "NASA/JPL/UArizona HiRISE DTM DTEEC_019698_1750_019988_1750_U01, 2 km crop at {cell:.2} m (lat {lat_s:.4}..{lat_n:.4}, lon {lon_w:.4}..{lon_e:.4})"
-        ),
+        name: name.into(),
+        source: source.into(),
         width: out_n,
         height: rows,
-        cell_m: cell,
+        cell_m: grid.cell_m,
         base: [base.0, base.1],
         targets,
         beacons,
@@ -268,6 +327,7 @@ fn site(root: &Path) -> anyhow::Result<()> {
     v["geo"] = serde_json::json!({"lat_min": lat_s, "lat_max": lat_n, "lon_min": lon_w, "lon_max": lon_e});
     fs::write(out.join("meta.json"), serde_json::to_string_pretty(&v)?)?;
     println!("[site] wrote {}", out.display());
+    let _ = (lat_s, lat_n, lon_w, lon_e);
     Ok(())
 }
 

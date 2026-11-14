@@ -51,6 +51,15 @@ try {
   await click('plan');
   await sleep(2500);
   await shot('02_routes.png');
+  await click('view-2d');
+  await sleep(1500);
+  await shot('02b_map2d_site.png');
+  await click('extent-global');
+  await sleep(4000);
+  await shot('02c_map2d_global.png');
+  await click('extent-local');
+  await click('view-3d');
+  await sleep(1500);
   await layer('hazard', true);
   await layer('coverage', true);
   await sleep(2500);

@@ -21,6 +21,7 @@ const api = createBackend();
 const S = {
   meta: null, terr: null, hazard: null, slope: null, rough: null, W: 0, H: 0, zmid: 0,
   goal: null, routes: {}, selected: null, obstacles: [], geo: null, region: null, globe: null, inGlobe: false,
+  view: '3d', mapExtent: 'local', ortho: false,
   layers: {}, layerCache: {},
   eva: null, // 進行中的 EVA
 };
@@ -38,10 +39,14 @@ const scene = new THREE.Scene();
 scene.background = skyTexture();
 const FOG_PLAN = new THREE.Fog('#7a5038', 3500, 9000), FOG_EVA = new THREE.Fog('#b88a63', 250, 2200);
 scene.fog = FOG_PLAN;
-const camera = new THREE.PerspectiveCamera(50, 1, 1, 600000);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.maxPolarAngle = Math.PI * 0.48;
+const perspectiveCamera = new THREE.PerspectiveCamera(50, 1, 1, 600000);
+let camera = perspectiveCamera;
+const perspectiveControls = new OrbitControls(perspectiveCamera, renderer.domElement);
+perspectiveControls.enableDamping = true;
+perspectiveControls.maxPolarAngle = Math.PI * 0.48;
+let controls = perspectiveControls;
+// 2D 地圖模式（組員 yifyu1122 的設計）：正交相機、拖曳平移、北方朝上
+let mapCamera = null, mapControls = null;
 scene.add(new THREE.HemisphereLight('#ffd9b8', '#3a1d10', 1.2));
 const sun = new THREE.DirectionalLight('#fff0dc', 2.4);
 sun.position.set(-1500, 1100, 900);
@@ -65,8 +70,9 @@ function skyTexture() {
 function resize() {
   renderer.setSize(innerWidth, innerHeight);
   labels.setSize(innerWidth, innerHeight);
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
+  perspectiveCamera.aspect = innerWidth / innerHeight;
+  perspectiveCamera.updateProjectionMatrix();
+  if (mapCamera) fitMapCamera();
 }
 addEventListener('resize', resize);
 resize();
@@ -94,7 +100,8 @@ const isHazard = (x, y) => { const v = cellVal(S.hazard, x, y); return v === nul
 const slopeAt = (x, y) => ((cellVal(S.slope, x, y) ?? 0) / 254) * 45;
 
 // ---------------------------------------------------------------- terrain + layers
-let terrainMesh, baseColors;
+let terrainMesh, mapMesh, baseColors, rockMesh;
+const globalMapMeshes = [];
 function buildTerrain() {
   const { w, h, data } = S.terr;
   const geo = new THREE.PlaneGeometry(S.W, S.H, w - 1, h - 1);
@@ -117,6 +124,54 @@ function buildTerrain() {
   geo.setAttribute('color', new THREE.BufferAttribute(baseColors.slice(), 3));
   terrainMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
   scene.add(terrainMesh);
+  // 2D 地圖用的平面 mesh（同一套顏色）
+  const mapGeo = new THREE.PlaneGeometry(S.W, S.H, w - 1, h - 1);
+  mapGeo.rotateX(-Math.PI / 2);
+  mapGeo.setAttribute('color', new THREE.BufferAttribute(baseColors.slice(), 3));
+  mapMesh = new THREE.Mesh(mapGeo, new THREE.MeshBasicMaterial({ vertexColors: true }));
+  mapMesh.position.y = -2000; // 只在 2D 模式顯示
+  mapMesh.visible = false;
+  scene.add(mapMesh);
+}
+
+/** HiRISE 正射影像貼在地形上（組員的資料，只對應預設的現場）。載入後底色改白，圖層變成在影像上著色。 */
+async function loadOrthophoto() {
+  const tex = await new THREE.TextureLoader().loadAsync('data/ortho.jpg');
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  for (const m of [terrainMesh, mapMesh]) { m.material.map = tex; m.material.needsUpdate = true; }
+  baseColors.fill(1);
+  S.ortho = true;
+  await applyLayers();
+  log('HiRISE orthophoto draped on the terrain', 'ok');
+}
+
+/** 2D 全球平面地圖：Viking 彩色鑲嵌圖（組員的資料），東西向無縫循環。 */
+async function buildGlobalMap() {
+  const tex = await new THREE.TextureLoader().loadAsync('data/global/satellite.jpg');
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const geo = new THREE.PlaneGeometry(360, 180, 1, 1);
+  geo.rotateX(-Math.PI / 2);
+  const base = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex }));
+  for (const offset of [-360, 0, 360]) {
+    const m = base.clone();
+    m.position.set(offset, -4000, 0);
+    m.visible = false;
+    globalMapMeshes.push(m);
+    scene.add(m);
+  }
+  // 現場位置標記（地圖座標：x = 經度 − 180，z = −緯度；圖片經度 0..360）
+  if (S.geo) {
+    const lat = (S.geo.lat_min + S.geo.lat_max) / 2, lon = (S.geo.lon_min + S.geo.lon_max) / 2;
+    const pin = new THREE.Mesh(new THREE.CircleGeometry(1.2, 24), new THREE.MeshBasicMaterial({ color: '#4dd6ff' }));
+    pin.rotation.x = -Math.PI / 2;
+    pin.position.set(lon - 180, -3999, -lat);
+    pin.visible = false;
+    globalMapMeshes.push(pin);
+    scene.add(pin);
+  }
+  S.hasGlobalMap = true;
 }
 
 /** 在粗糙度高的地方散佈岩塊（InstancedMesh），讓危險區看得出來。 */
@@ -136,6 +191,7 @@ function scatterRocks() {
     m.compose(groundV(x, y, s * 0.3), q.setFromEuler(e), new THREE.Vector3(s, s * 0.7, s));
     mesh.setMatrixAt(k, m);
   });
+  rockMesh = mesh;
   scene.add(mesh);
 }
 
@@ -190,6 +246,7 @@ async function applyLayers() {
   }
   colors.array.set(out);
   colors.needsUpdate = true;
+  if (mapMesh) { mapMesh.geometry.attributes.color.array.set(out); mapMesh.geometry.attributes.color.needsUpdate = true; }
   $('legend-box').innerHTML = legends.join('');
 }
 function buildLayerPanel() {
@@ -428,6 +485,7 @@ $('opt-vibe').onchange = (e) => (feedback.vibrate = e.target.checked);
 function startEva() {
   const r = S.routes[S.selected];
   if (!r) return;
+  if (S.view !== '3d') setViewMode('3d');
   feedback.unlockAudio();
   const [bx, by] = S.meta.base;
   const first = r.route.path[Math.min(1, r.route.path.length - 1)];
@@ -736,7 +794,107 @@ function showAlert(text, info, ms) {
   clearTimeout(alertTimer);
   alertTimer = setTimeout(() => a.classList.add('hidden'), ms);
 }
+// ---------------------------------------------------------------- 2D map mode (ported from teammate's version)
+function createMapCamera() {
+  mapCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 50000);
+  mapCamera.up.set(0, 0, -1);
+  mapControls = new OrbitControls(mapCamera, renderer.domElement);
+  Object.assign(mapControls, { enableDamping: true, enableRotate: false, screenSpacePanning: true, minZoom: 0.75, maxZoom: 40, zoomToCursor: true });
+  mapControls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+  mapControls.touches.ONE = THREE.TOUCH.PAN;
+  mapControls.enabled = false;
+  fitMapCamera();
+}
+const mapIsGlobal = () => S.mapExtent === 'global' && S.hasGlobalMap;
+function fitMapCamera() {
+  const aspect = innerWidth / innerHeight;
+  const [w, h] = mapIsGlobal() ? [360, 180] : [S.W, S.H];
+  const ext = Math.max(h / 2, w / (2 * aspect)) * 1.08;
+  Object.assign(mapCamera, { left: -ext * aspect, right: ext * aspect, top: ext, bottom: -ext });
+  mapCamera.updateProjectionMatrix();
+}
+function mapCenter() {
+  return mapIsGlobal() ? new THREE.Vector3(innerWidth > 700 ? -45 : 0, -4000, 0) : new THREE.Vector3(innerWidth > 700 ? -S.W * 0.16 : 0, -2000, 0);
+}
+function syncMapVisibility() {
+  const isMap = S.view === '2d', global = isMap && mapIsGlobal();
+  terrainMesh.visible = !isMap;
+  mapMesh.visible = isMap && !global;
+  // 2D 現場圖：其他物件維持原高度，平面圖放在它們下方，從正上方看位置一致
+  mapMesh.position.y = isMap ? S.meta.z_min - S.zmid - 50 : -2000;
+  globalMapMeshes.forEach((m) => (m.visible = global));
+  // 全球 2D 地圖：暫時隱藏所有現場物件（路線、標記、太空人…），回到現場再還原
+  if (global && !S.hiddenForGlobal) {
+    S.hiddenForGlobal = scene.children.filter((o) => !o.isLight && !globalMapMeshes.includes(o) && o.visible);
+    S.hiddenForGlobal.forEach((o) => (o.visible = false));
+  } else if (!global && S.hiddenForGlobal) {
+    S.hiddenForGlobal.forEach((o) => (o.visible = true));
+    S.hiddenForGlobal = null;
+  }
+  if (rockMesh) rockMesh.visible = !isMap;
+  if (S.region) S.region.mesh.visible = !isMap && !S.inGlobe && VIEW_KM[+$('view-dist').value] > 3;
+  labels.domElement.style.visibility = global ? 'hidden' : '';
+  terrainMesh.visible = !isMap;
+  mapMesh.visible = isMap && !global;
+  if (rockMesh) rockMesh.visible = !isMap;
+  if (S.region) S.region.mesh.visible = !isMap && !S.inGlobe && VIEW_KM[+$('view-dist').value] > 3;
+  // 2D 相機離地很遠，霧會把整張圖蓋掉 → 2D 模式關閉霧
+  scene.fog = isMap || S.inGlobe ? null : (S.eva ? FOG_EVA : FOG_PLAN);
+}
+function setViewMode(mode) {
+  if (S.inGlobe) toggleGlobe();
+  S.view = mode === '2d' ? '2d' : '3d';
+  const isMap = S.view === '2d';
+  if (isMap && !mapCamera) createMapCamera();
+  camera = isMap ? mapCamera : perspectiveCamera;
+  controls = isMap ? mapControls : perspectiveControls;
+  perspectiveControls.enabled = !isMap;
+  if (mapControls) mapControls.enabled = isMap;
+  ['view-3d', 'view-2d'].forEach((id) => {
+    const on = (id === 'view-2d') === isMap;
+    $(id).classList.toggle('active', on);
+    $(id).setAttribute('aria-pressed', String(on));
+  });
+  $('view-hint').textContent = isMap ? (mapIsGlobal() ? 'Drag to pan · wheel to zoom · east/west wraps' : 'Drag to pan · wheel to zoom · north is up') : 'Drag to orbit · wheel to zoom';
+  if (isMap) fitMapCamera();
+  syncMapVisibility();
+  overviewCamera();
+}
+async function setMapExtent(extent) {
+  if (extent === 'global' && !S.hasGlobalMap) {
+    try { await buildGlobalMap(); } catch (e) { log(`Global map unavailable: ${e.message}`, 'warn'); }
+  }
+  S.mapExtent = extent === 'global' && S.hasGlobalMap ? 'global' : 'local';
+  const g = S.mapExtent === 'global';
+  ['extent-global', 'extent-local'].forEach((id) => {
+    const on = (id === 'extent-global') === g;
+    $(id).classList.toggle('active', on);
+    $(id).setAttribute('aria-pressed', String(on));
+  });
+  if (S.view !== '2d') setViewMode('2d');
+  else { fitMapCamera(); syncMapVisibility(); overviewCamera(); }
+  $('view-hint').textContent = g ? 'Drag to pan · wheel to zoom · east/west wraps' : 'Drag to pan · wheel to zoom · north is up';
+}
+/** 全球 2D 地圖東西向無縫循環。 */
+function wrapGlobalMap() {
+  if (S.view !== '2d' || !mapIsGlobal()) return;
+  const shift = Math.floor((mapControls.target.x + 180) / 360) * 360;
+  if (!shift) return;
+  mapControls.target.x -= shift;
+  mapCamera.position.x -= shift;
+}
+
 function overviewCamera() {
+  if (S.view === '2d' && mapCamera) {
+    const c = mapCenter();
+    mapControls.target.copy(c);
+    mapCamera.position.set(c.x, c.y + 20000, c.z);
+    mapCamera.zoom = 1;
+    mapCamera.updateProjectionMatrix();
+    mapCamera.lookAt(c);
+    mapControls.update();
+    return;
+  }
   const shift = innerWidth > 700 ? -S.W * 0.16 : 0;
   camera.position.set(shift - S.W * 0.05, S.W * 0.78, S.H * 0.9);
   controls.target.set(shift, 0, -S.H * 0.04);
@@ -760,7 +918,8 @@ renderer.domElement.addEventListener('pointerup', (e) => {
 async function boot() {
   const t0 = performance.now();
   const params = new URLSearchParams(location.search);
-  const info = await api.ready({ siteBase: new URL('data/site/', location.href).href, synthetic: params.has('synthetic') });
+  const siteDir = params.get('site') === 'nw' ? 'data/site_nw/' : 'data/site/';
+  const info = await api.ready({ siteBase: new URL(siteDir, location.href).href, synthetic: params.has('synthetic') });
   const build_ms = info.build_ms;
   S.geo = info.geo || null;
   $('loading-text').textContent = 'Loading terrain…';
@@ -782,6 +941,11 @@ async function boot() {
       scene.add(S.region.mesh);
     } catch (e) { log(`Regional map unavailable: ${e.message}`, 'warn'); }
   }
+  if (info.source === 'hirise' && params.get('site') !== 'nw') loadOrthophoto().catch((e) => log(`Orthophoto unavailable (${e.message})`, 'warn'));
+  $('view-3d').onclick = () => setViewMode('3d');
+  $('view-2d').onclick = () => setViewMode('2d');
+  $('extent-global').onclick = () => setMapExtent('global');
+  $('extent-local').onclick = () => setMapExtent('local');
   $('view-dist').oninput = (e) => setViewDistance(+e.target.value);
   setViewDistance(+$('view-dist').value);
   $('globe').onclick = () => toggleGlobe().catch((e) => log(`Globe failed: ${e.message}`, 'bad'));
@@ -818,9 +982,10 @@ const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   if (S.eva) evaTick(dt);
+  wrapGlobalMap();
   controls.update();
   // 拉遠時隱藏 3D 標籤，避免全部擠在一起
-  labels.domElement.style.display = S.inGlobe || camera.position.distanceTo(controls.target) > 9000 ? 'none' : '';
+  labels.domElement.style.display = S.inGlobe || (S.view === '3d' && camera.position.distanceTo(controls.target) > 9000) ? 'none' : '';
   renderer.render(scene, camera);
   labels.render(scene, camera);
 });

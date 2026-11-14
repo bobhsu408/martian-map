@@ -10,3 +10,4 @@ data/raw/
 *.tiff
 # OS
 .DS_Store
+__pycache__/

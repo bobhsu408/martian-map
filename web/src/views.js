@@ -82,7 +82,18 @@ export async function buildGlobe(siteLat, siteLon) {
   geom.computeVertexNormals();
   geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   const globe = new THREE.Group();
-  globe.add(new THREE.Mesh(geom, new THREE.MeshLambertMaterial({ vertexColors: true })));
+  const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+  globe.add(new THREE.Mesh(geom, material));
+  // Viking 彩色鑲嵌圖（組員的資料）：圖片經度 0..360，球的 u 從 −180 開始 → 平移半圈
+  try {
+    const tex = await new THREE.TextureLoader().loadAsync('data/global/satellite.jpg');
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.offset.x = 0.5;
+    material.map = tex;
+    material.vertexColors = false;
+    material.needsUpdate = true;
+  } catch { /* 沒有衛星圖就用高程配色 */ }
   // 現場標記（SphereGeometry: x = −cos(lon')sin(θ)…，用同樣的 uv 規則換算）
   const phi = ((siteLon + 180) / 360) * Math.PI * 2, theta = ((90 - siteLat) / 180) * Math.PI;
   const dir = new THREE.Vector3(-Math.cos(phi) * Math.sin(theta), Math.cos(theta), Math.sin(phi) * Math.sin(theta));
