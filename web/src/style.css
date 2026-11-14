@@ -175,11 +175,11 @@ button.ghost { background: transparent; margin-top: 10px; }
   display: flex; flex-direction: column; border: 10px solid #1c2026; border-radius: 22px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), inset 0 0 0 1px #3a424e;
 }
-#tablet.lowered { width: min(560px, calc(100vw - 24px)); }
+#tablet.lowered { width: min(720px, calc(100vw - 24px)); }
 #tablet.raised { width: min(1180px, calc(100vw - 24px)); height: min(720px, calc(100vh - 24px)); }
 #tablet.lowered .tab-body { display: none; }
 .tab-bar {
-  display: grid; grid-template-columns: auto 1fr auto auto; gap: 12px; align-items: center;
+  display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 12px; align-items: center;
   background: rgba(12, 14, 18, 0.95); padding: 8px 12px; border-radius: 12px 12px 0 0; cursor: pointer; font-size: 12px;
 }
 #tablet.lowered .tab-bar { border-radius: 12px; }
@@ -242,3 +242,13 @@ button.ghost { background: transparent; margin-top: 10px; }
 .lang-btn { float: right; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid #ff8a4c; background: transparent; color: #ff8a4c; cursor: pointer; letter-spacing: 0; }
 .lang-btn:hover { background: #ff8a4c; color: #111; }
 .intro-card { position: relative; }
+
+/* 回頭倒數（不歸點） */
+.tb-pnr { min-width: 104px; text-align: center; border-radius: 8px; padding: 5px 8px; background: #20262e; border: 1px solid var(--line); }
+.tb-pnr.hidden { display: none; }
+.tb-pnr span { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: rgba(255, 255, 255, 0.75); }
+.tb-pnr b { font-size: 13px; }
+.tb-pnr.low b { color: var(--ok); }
+.tb-pnr.mid { border-color: var(--warn); } .tb-pnr.mid b { color: var(--warn); }
+.tb-pnr.high { border-color: var(--bad); background: rgba(255, 59, 48, 0.18); } .tb-pnr.high b { color: var(--bad); }
+.tb-pnr.ret b { color: #4dd6ff; font-size: 11px; }

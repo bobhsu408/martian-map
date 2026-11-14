@@ -748,6 +748,7 @@ function updateHud() {
   const tRet = n.t_return_min;
   $('g-ret').textContent = Number.isFinite(tRet) ? `${tRet.toFixed(0)} min` : '—';
   const mustReturn = !e.returning && Number.isFinite(tRet) && e.o2 < tRet + reserve + 10;
+  e.margin = Number.isFinite(tRet) ? e.o2 - tRet - reserve : null; // 還能往外走多久才必須回頭
   if (mustReturn && !e.raisedForReturn) { e.raisedForReturn = true; setTablet(true); }
   const clr = n.clearance_m;
   $('g-safe').textContent = e.blocked ? 'NO-GO ahead' : clr >= 20 ? 'safe' : clr >= 8 ? `caution ${clr.toFixed(0)} m` : `hazard ${clr.toFixed(0)} m`;
@@ -865,6 +866,7 @@ function leak() {
   e.o2Rate = 3;
   $('leak').disabled = true;
   log('Suit O₂ leak detected: 40 min left, consumption ×3', 'bad');
+  refreshPnrBoundary(true);
   doReplan('O₂ leak');
 }
 // ---- 通訊中斷與自行布設信標
@@ -910,6 +912,7 @@ function clearBeaconEvents() {
 
 function reset() {
   S.eva = null;
+  clearPnrBoundary();
   clearBeaconEvents();
   S.obstacles = [];
   keys.clear();
@@ -1313,13 +1316,64 @@ function updateTabBar(dt) {
     st.className = $('status-pill').className;
     guide.innerHTML = $('compass-text').innerHTML.replace('<br>', ' · ');
     $('tb-arrow').classList.remove('hidden');
+    // 回頭倒數：剩餘 O₂ − 回程時間 − 安全預留
+    const pn = $('tb-pnr'), m = e.margin;
+    pn.classList.remove('hidden');
+    if (e.returning) { pn.className = 'tb-pnr ret'; $('tb-pnr-text').textContent = 'HEADING HOME'; }
+    else if (m == null) { pn.className = 'tb-pnr'; $('tb-pnr-text').textContent = '—'; }
+    else {
+      pn.className = `tb-pnr ${m <= 10 ? 'high' : m <= 45 ? 'mid' : 'low'}`;
+      $('tb-pnr-text').textContent = m <= 0 ? 'TURN BACK NOW' : `${m.toFixed(0)} min`;
+    }
+    $('g-turn').textContent = e.returning ? '—' : m == null ? '—' : m <= 0 ? 'NOW' : `${m.toFixed(0)} min`;
   } else {
+    $('tb-pnr').classList.add('hidden');
     st.className = '';
     st.textContent = S.selected ? 'ROUTE READY' : 'FREE WALK';
     guide.textContent = S.selected ? 'Tab / M — start the EVA on the tablet' : 'Tab / M — open Martian Map';
     $('tb-arrow').classList.add('hidden');
   }
 }
+
+// ---------------------------------------------------------------- 不歸點邊界（EVA 中自動顯示）
+// 紅點連成的圈：圈內 = 從目前位置走過去還能用剩餘 O₂ 安全回基地；氧氣越少圈越小。
+const pnrPts = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ color: '#ff3b30', size: 4, sizeAttenuation: false, depthTest: false, transparent: true, opacity: 0.9 }));
+pnrPts.renderOrder = 950;
+pnrPts.layers.enable(1); // 主畫面＋平板小地圖都看得到
+scene.add(pnrPts);
+let pnrBusy = false, pnrLast = -1e9;
+async function refreshPnrBoundary(force = false) {
+  const e = S.eva;
+  if (!e || e.done || pnrBusy || S.view !== '3d') return;
+  const now = performance.now();
+  if (!force && now - pnrLast < 4000) return;
+  pnrBusy = true; pnrLast = now;
+  try {
+    const g = await api.layer('pnr', { step: MESH_STEP, x: e.est.x, y: e.est.y, o2_min: e.o2 });
+    if (S.eva !== e) return;
+    const { w, h, data } = g, cs = (S.meta.width * S.meta.cell_m) / w, pts = [];
+    let inside = 0;
+    for (let j = 1; j < h - 1; j++) for (let i = 1; i < w - 1; i++) {
+      const k = j * w + i;
+      if (data[k] < 128) continue;
+      inside++;
+      // 邊界 = 旁邊那格「可以走、但走過去就回不來」；旁邊是禁區（本來就不能走）的不算
+      const x = (i + 0.5) * cs, y = (j + 0.5) * cs;
+      for (const [di, dj] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        if (data[k + di + dj * w] >= 128) continue;
+        const nx = x + di * cs, ny = y + dj * cs;
+        let open = true;
+        for (const [ox, oy] of [[0, 0], [-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]]) if (isHazard(nx + ox * cs, ny + oy * cs)) { open = false; break; }
+        if (open) { pts.push(groundV(x, y, 3)); break; }
+      }
+    }
+    e.pnrInside = inside / ((w - 2) * (h - 2));
+    if (e.margin != null && e.margin > 120) pts.length = 0; // O₂ 很充裕時整個區域都回得來，不畫線
+    pnrPts.geometry.dispose();
+    pnrPts.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+  } catch (err) { /* 圖層失敗不影響 EVA */ } finally { pnrBusy = false; }
+}
+function clearPnrBoundary() { pnrPts.geometry.dispose(); pnrPts.geometry = new THREE.BufferGeometry(); }
 
 // ---------------------------------------------------------------- boot
 async function boot() {
@@ -1421,6 +1475,7 @@ renderer.setAnimationLoop(() => {
   labels.render(scene, camera);
   renderMini();
   updateTabBar(dt);
+  if (S.eva) refreshPnrBoundary();
 });
 initI18n();
 boot().catch((e) => { $('loading-text').textContent = `Failed to load: ${e.message}`; console.error(e); });

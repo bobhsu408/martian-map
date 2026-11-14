@@ -74,6 +74,8 @@ const EXACT = {
   'Globe view: NASA MOLA topography, 12× vertical exaggeration; the blue pin marks the EVA site in Gale crater':
     '地球儀：NASA MOLA 地形，垂直誇大 12 倍；藍色圖釘是 Gale 撞擊坑裡的 EVA 現場',
   'Too close to the last beacon — walk at least 15 m apart so the beacons spread out': '離上一個信標太近 — 至少走開 15 m，讓信標分散開來',
+  'Turn back in': '回頭倒數', 'TURN BACK NOW': '立刻回頭', 'HEADING HOME': '返航中', 'NOW': '現在',
+  'Minutes you can keep going out before you must turn back (O₂ left − return time − reserve)': '還能往外走幾分鐘才必須回頭（剩餘 O₂ − 回程時間 − 安全預留）',
   '📡 Lose base link': '📡 與基地斷線',
   'Habitat, rover and relay beacons go silent': '基地、探測車和中繼天線的信標都失聯',
   'Drop a UWB beacon here (key B)': '在這裡放下一個 UWB 信標（B 鍵）',
