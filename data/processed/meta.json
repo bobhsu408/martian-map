@@ -1,0 +1,72 @@
+{
+  "name": "Mount Sharp HiRISE local navigation DEM",
+  "source": "HiRISE DTM DTEEC_001488_1750_001752_1750_U02",
+  "width": 1977,
+  "height": 1977,
+  "cell_m": 1.0117467945795,
+  "base": [
+    1000.0,
+    1000.0
+  ],
+  "targets": [],
+  "beacons": [],
+  "format": {
+    "dem": "little-endian IEEE-754 float32, row-major",
+    "valid_mask": "uint8; 255=valid, 0=nodata"
+  },
+  "visual": {
+    "orthophoto": "ortho.jpg"
+  },
+  "georeference": {
+    "projection": "EQUIRECTANGULAR",
+    "latitude_type": "PLANETOCENTRIC",
+    "positive_longitude_direction": "EAST",
+    "planet_radius_km": 3396.19,
+    "source_center_lat_deg": 0.0,
+    "source_center_lon_deg": 137.3,
+    "source_bounds_deg": {
+      "south": -4.9488438128812,
+      "north": -4.7205582307,
+      "west": 137.23895775,
+      "east": 137.35392443
+    },
+    "crop_bounds_deg": {
+      "south": -4.846862029439505,
+      "north": -4.813118433478964,
+      "west": 137.2831113725,
+      "east": 137.31685382
+    },
+    "local_origin": {
+      "latitude_deg": -4.846862029439505,
+      "longitude_deg": 137.2831113725,
+      "description": "southwest corner; x=east, y=north"
+    },
+    "source_pixel_window": {
+      "row_start": 5423,
+      "row_end_exclusive": 7400,
+      "column_start": 2587,
+      "column_end_exclusive": 4564
+    },
+    "source_row_order": "north-to-south",
+    "output_row_order": "south-first",
+    "source_pixel_scale_m": 1.0117467945795,
+    "sample_step": 1,
+    "output_width_m": 2000.2234128836715,
+    "output_height_m": 2000.2234128836715
+  },
+  "nodata": {
+    "source_constant": "16#FF7FFFFB#",
+    "output_value": "NaN when --allow-nodata is used",
+    "valid_cells": 3908529,
+    "total_cells": 3908529,
+    "valid_fraction": 1.0
+  },
+  "provenance": {
+    "input_file": "D:\\NASAHackathon\\martian-map\\data\\raw\\official\\hirise\\DTEEC_001488_1750_001752_1750_U02.IMG",
+    "input_sha256": "9359ca71b31e2689d9e2f38dd56fa83b051a09e360f8566730092a0f4cbe80bb",
+    "record_bytes": 26944,
+    "image_record": 2,
+    "image_data_offset_bytes": 26944,
+    "processing_tool": "tools/preprocess.py"
+  }
+}

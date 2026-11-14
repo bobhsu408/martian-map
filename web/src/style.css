@@ -38,6 +38,9 @@ button.primary { background: var(--accent); color: #111; border: none; font-weig
 .row { display: flex; gap: 6px; margin-top: 6px; }
 #eva-controls > button { margin-top: 6px; }
 .hint { color: var(--muted); font-size: 10px; margin-top: 4px; }
+.view-switch { display: flex; gap: 6px; }
+.view-button { flex: 1; }
+.view-button.active { background: var(--accent); color: #111; border-color: var(--accent); }
 .desc { margin-top: 6px; color: #c9d1dc; line-height: 1.4; }
 .legend { margin-top: 6px; height: 10px; border-radius: 3px; }
 .legend-text { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; margin-top: 2px; }

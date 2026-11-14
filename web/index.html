@@ -11,15 +11,33 @@
 
     <div id="loading">
       <div class="spinner"></div>
-      <div id="loading-text">Building terrain model on-board (WebAssembly)…</div>
+      <div id="loading-text">Loading HiRISE terrain map…</div>
     </div>
 
     <aside id="panel">
       <header>
         <h1>MARTIAN MAP</h1>
-        <div class="sub">Offline EVA route planner · Mount Sharp boxwork</div>
+      <div class="sub">Offline Mars map · MOLA global overview + HiRISE local detail</div>
         <div class="badge" id="badge">● OFFLINE · ON-BOARD COMPUTE</div>
       </header>
+
+      <section>
+        <label>View mode</label>
+        <div id="view-switch" class="view-switch" role="group" aria-label="Map view mode">
+          <button id="view-3d" type="button" class="view-button active" aria-pressed="true">3D terrain</button>
+          <button id="view-2d" type="button" class="view-button" aria-pressed="false">2D map</button>
+        </div>
+        <div id="view-hint" class="hint">Drag to orbit · wheel to zoom</div>
+      </section>
+
+      <section>
+        <label>Map extent</label>
+        <div id="extent-switch" class="view-switch" role="group" aria-label="Map extent">
+          <button id="extent-global" type="button" class="view-button active" aria-pressed="true">Mars global</button>
+          <button id="extent-local" type="button" class="view-button" aria-pressed="false">Mount Sharp</button>
+        </div>
+        <div class="hint">Global satellite: Viking · terrain: MOLA · local detail: HiRISE</div>
+      </section>
 
       <section>
         <label>Science target</label>
