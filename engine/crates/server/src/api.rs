@@ -6,10 +6,15 @@ use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
-use mars_core::{params::encode_u8, Grid};
+use mars_core::{
+    cost::Mode,
+    params::encode_u8,
+    planner::{Obstacle, PlanError, Route},
+    Grid,
+};
 use serde::Deserialize;
 use serde_json::json;
 use std::{path::PathBuf, sync::Arc};
@@ -22,6 +27,9 @@ pub fn router(st: Arc<AppState>, web_dir: Option<PathBuf>) -> Router {
         .route("/api/meta", get(meta))
         .route("/api/terrain", get(terrain))
         .route("/api/layer/{name}", get(layer))
+        .route("/api/route", post(route))
+        .route("/api/routes/compare", post(compare))
+        .route("/api/replan", post(replan))
         .with_state(st)
         .layer(CorsLayer::permissive());
     match web_dir {
@@ -44,10 +52,25 @@ impl ApiError {
     }
 }
 
+impl From<PlanError> for ApiError {
+    fn from(e: PlanError) -> Self {
+        match e {
+            PlanError::OutOfBounds => Self::new(StatusCode::BAD_REQUEST, "out_of_bounds", "coordinate outside the map"),
+            PlanError::Blocked => Self::new(StatusCode::UNPROCESSABLE_ENTITY, "blocked", "start or goal is inside a hazard area"),
+            PlanError::NoPath => Self::new(StatusCode::UNPROCESSABLE_ENTITY, "no_path", "no traversable route found"),
+        }
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         (self.status, Json(json!({"error": self.code, "message": self.message}))).into_response()
     }
+}
+
+/// 把耗 CPU 的規劃工作丟到 blocking 執行緒，避免卡住 async runtime。
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    tokio::task::spawn_blocking(f).await.expect("planner task panicked")
 }
 
 // ---------- 二進位網格回應 ----------
@@ -62,9 +85,15 @@ fn grid_response(w: usize, h: usize, cell_m: f32, body: Vec<u8>) -> Response {
     (hm, body).into_response()
 }
 
-fn u8_layer(g: &Grid<f32>, step: usize, min: f32, max: f32) -> Response {
+fn f32_layer(g: &Grid<f32>, step: usize, min: f32, max: f32) -> Response {
     let d = g.downsample(step);
     let body = d.data.iter().map(|&v| encode_u8(v, min, max)).collect();
+    grid_response(d.w, d.h, d.cell_m, body)
+}
+
+fn bool_layer(g: &Grid<bool>, step: usize) -> Response {
+    let d = g.downsample(step);
+    let body = d.data.iter().map(|&b| if b { 255 } else { 0 }).collect();
     grid_response(d.w, d.h, d.cell_m, body)
 }
 
@@ -72,6 +101,7 @@ fn u8_layer(g: &Grid<f32>, step: usize, min: f32, max: f32) -> Response {
 
 async fn meta(State(st): St) -> Json<serde_json::Value> {
     let w = &st.world;
+    let p = &st.planner;
     let (z_min, z_max) = w.dem.min_max();
     Json(json!({
         "name": w.name,
@@ -80,14 +110,14 @@ async fn meta(State(st): St) -> Json<serde_json::Value> {
         "z_min": z_min, "z_max": z_max,
         "base": [w.base.0, w.base.1],
         "targets": w.targets,
-        "params": st.params,
+        "params": p.params,
+        "thresholds": {"slope_max_deg": p.thresholds.slope_max_deg, "rough_max_m": p.thresholds.rough_max_m},
         "layers": {
             "slope":  {"unit": "deg", "min": 0, "max": 45},
-            "rough":  {"unit": "m",   "min": 0, "max": 2},
+            "rough":  {"unit": "m",   "min": 0, "max": 1},
             "hazard": {"unit": "bool"},
-            "cost":   {"unit": "rel", "min": 1, "max": 20},
-            "pnr":    {"unit": "bool"},
-            "svf":    {"unit": "ratio", "min": 0, "max": 1}
+            "cost":   {"unit": "rel", "min": 0, "max": 12},
+            "pnr":    {"unit": "bool"}
         }
     }))
 }
@@ -105,15 +135,77 @@ async fn terrain(State(st): St, Query(q): Query<StepQ>) -> Response {
 #[derive(Deserialize)]
 struct LayerQ {
     step: Option<usize>,
+    mode: Option<Mode>,
+    x: Option<f32>,
+    y: Option<f32>,
+    o2_min: Option<f32>,
 }
 
 async fn layer(State(st): St, Path(name): Path<String>, Query(q): Query<LayerQ>) -> Result<Response, ApiError> {
     let step = q.step.unwrap_or(1).clamp(1, 64);
+    let p = &st.planner;
     match name.as_str() {
-        "slope" => Ok(u8_layer(&st.slope, step, 0.0, 45.0)),
-        "rough" => Ok(u8_layer(&st.rough, step, 0.0, 2.0)),
+        "slope" => Ok(f32_layer(&p.slope, step, 0.0, 45.0)),
+        "rough" => Ok(f32_layer(&p.rough, step, 0.0, 1.0)),
+        "hazard" => Ok(bool_layer(&p.hazard, step)),
+        "cost" => Ok(f32_layer(p.cost(q.mode.unwrap_or(Mode::Balanced)), step, 0.0, 12.0)),
+        "pnr" => {
+            let pos = (q.x.unwrap_or(p.base.0), q.y.unwrap_or(p.base.1));
+            let o2 = q.o2_min.unwrap_or(p.params.o2_capacity_min);
+            let st2 = st.clone();
+            let mask = blocking(move || st2.planner.pnr_mask(pos, o2)).await?;
+            Ok(bool_layer(&mask, step))
+        }
         _ => Err(ApiError::new(StatusCode::NOT_FOUND, "unknown_layer", format!("layer '{name}' not available"))),
     }
+}
+
+#[derive(Deserialize)]
+struct RouteReq {
+    start: [f32; 2],
+    goal: [f32; 2],
+    mode: Option<Mode>,
+}
+
+async fn route(State(st): St, Json(r): Json<RouteReq>) -> Result<Json<Route>, ApiError> {
+    let mode = r.mode.unwrap_or(Mode::Balanced);
+    let out = blocking(move || st.planner.route((r.start[0], r.start[1]), (r.goal[0], r.goal[1]), mode)).await?;
+    Ok(Json(out))
+}
+
+async fn compare(State(st): St, Json(r): Json<RouteReq>) -> Result<Json<serde_json::Value>, ApiError> {
+    let [a, b, c] = blocking(move || st.planner.compare((r.start[0], r.start[1]), (r.goal[0], r.goal[1]))).await;
+    if let (Err(e), Err(_), Err(_)) = (&a, &b, &c) {
+        return Err(e.clone().into());
+    }
+    Ok(Json(json!({"safe": a.ok(), "balanced": b.ok(), "science": c.ok()})))
+}
+
+#[derive(Deserialize)]
+struct ReplanReq {
+    pos: [f32; 2],
+    goal: [f32; 2],
+    mode: Option<Mode>,
+    #[serde(default)]
+    obstacles: Vec<Obstacle>,
+    o2_min: Option<f32>,
+}
+
+async fn replan(State(st): St, Json(r): Json<ReplanReq>) -> Result<Json<serde_json::Value>, ApiError> {
+    let out = blocking(move || {
+        let base = &st.planner;
+        let o2 = r.o2_min.unwrap_or(base.params.o2_capacity_min);
+        let mode = r.mode.unwrap_or(Mode::Safe);
+        let pos = (r.pos[0], r.pos[1]);
+        let goal = (r.goal[0], r.goal[1]);
+        if r.obstacles.is_empty() {
+            base.replan(pos, goal, mode, false, o2)
+        } else {
+            base.with_obstacles(&r.obstacles).replan(pos, goal, mode, true, o2)
+        }
+    })
+    .await?;
+    Ok(Json(serde_json::to_value(out).unwrap()))
 }
 
 #[cfg(test)]
@@ -123,48 +215,82 @@ mod tests {
     use axum::http::Request;
     use http_body_util::BodyExt;
     use mars_core::synth::{generate, SynthSpec};
+    use std::sync::OnceLock;
     use tower::ServiceExt;
 
     fn app() -> Router {
-        let world = generate(&SynthSpec { w: 128, h: 96, cell_m: 4.0, seed: 1 });
-        router(Arc::new(AppState::from_world(world)), None)
+        static ST: OnceLock<Arc<AppState>> = OnceLock::new();
+        let st = ST.get_or_init(|| Arc::new(AppState::from_world(generate(&SynthSpec::default())))).clone();
+        router(st, None)
     }
 
-    async fn get_raw(uri: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
-        let res = app().oneshot(Request::get(uri).body(Body::empty()).unwrap()).await.unwrap();
+    async fn send(req: Request<Body>) -> (StatusCode, HeaderMap, Vec<u8>) {
+        let res = app().oneshot(req).await.unwrap();
         let (status, headers) = (res.status(), res.headers().clone());
         (status, headers, res.into_body().collect().await.unwrap().to_bytes().to_vec())
     }
 
+    async fn get_raw(uri: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
+        send(Request::get(uri).body(Body::empty()).unwrap()).await
+    }
+
+    async fn post_json(uri: &str, body: serde_json::Value) -> (StatusCode, serde_json::Value) {
+        let req = Request::post(uri).header("content-type", "application/json").body(Body::from(body.to_string())).unwrap();
+        let (s, _, b) = send(req).await;
+        (s, serde_json::from_slice(&b).unwrap())
+    }
+
+    async fn meta_json() -> serde_json::Value {
+        serde_json::from_slice(&get_raw("/api/meta").await.2).unwrap()
+    }
+
     #[tokio::test]
     async fn meta_shape() {
-        let (s, _, b) = get_raw("/api/meta").await;
-        assert_eq!(s, StatusCode::OK);
-        let v: serde_json::Value = serde_json::from_slice(&b).unwrap();
-        assert_eq!(v["width"], 128);
-        assert_eq!(v["height"], 96);
+        let v = meta_json().await;
+        assert_eq!(v["width"], 1024);
         assert!(v["targets"].as_array().unwrap().len() >= 1);
         assert!(v["params"]["slope_max_deg"].is_number());
     }
 
     #[tokio::test]
-    async fn terrain_binary_length_matches_headers() {
-        let (s, h, b) = get_raw("/api/terrain?step=4").await;
-        assert_eq!(s, StatusCode::OK);
-        let w: usize = h["x-width"].to_str().unwrap().parse().unwrap();
-        let hh: usize = h["x-height"].to_str().unwrap().parse().unwrap();
-        assert_eq!((w, hh), (32, 24));
-        assert_eq!(b.len(), w * hh * 4);
-    }
-
-    #[tokio::test]
-    async fn layer_slope_and_unknown() {
-        let (s, _, b) = get_raw("/api/layer/slope").await;
-        assert_eq!(s, StatusCode::OK);
-        assert_eq!(b.len(), 128 * 96);
+    async fn binary_layers_match_headers() {
+        for uri in ["/api/terrain?step=4", "/api/layer/slope?step=4", "/api/layer/hazard?step=4", "/api/layer/cost?mode=safe&step=4", "/api/layer/pnr?step=4&o2_min=200"] {
+            let (s, h, b) = get_raw(uri).await;
+            assert_eq!(s, StatusCode::OK, "{uri}");
+            let w: usize = h["x-width"].to_str().unwrap().parse().unwrap();
+            let hh: usize = h["x-height"].to_str().unwrap().parse().unwrap();
+            let bpp = if uri.starts_with("/api/terrain") { 4 } else { 1 };
+            assert_eq!(b.len(), w * hh * bpp, "{uri}");
+        }
         let (s, _, b) = get_raw("/api/layer/nope").await;
         assert_eq!(s, StatusCode::NOT_FOUND);
         let v: serde_json::Value = serde_json::from_slice(&b).unwrap();
         assert_eq!(v["error"], "unknown_layer");
+    }
+
+    #[tokio::test]
+    async fn route_compare_and_replan() {
+        let m = meta_json().await;
+        let (base, t) = (m["base"].clone(), &m["targets"][0]);
+        let goal = json!([t["x"], t["y"]]);
+
+        let (s, r) = post_json("/api/route", json!({"start": base, "goal": goal, "mode": "safe"})).await;
+        assert_eq!(s, StatusCode::OK);
+        assert!(r["path"].as_array().unwrap().len() >= 2);
+        assert!(r["eta_min"].as_f64().unwrap() > 0.0);
+
+        let (s, c) = post_json("/api/routes/compare", json!({"start": base, "goal": goal})).await;
+        assert_eq!(s, StatusCode::OK);
+        for k in ["safe", "balanced", "science"] {
+            assert!(c[k]["length_m"].is_number(), "{k}");
+        }
+
+        let (s, rp) = post_json("/api/replan", json!({"pos": base, "goal": goal, "mode": "safe", "o2_min": 35})).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(rp["must_return"], true);
+
+        let (s, e) = post_json("/api/route", json!({"start": [-5, 0], "goal": goal})).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+        assert_eq!(e["error"], "out_of_bounds");
     }
 }
