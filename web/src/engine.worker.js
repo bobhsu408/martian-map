@@ -6,7 +6,13 @@ let engine;
 const ready = (async () => {
   await init();
   const t0 = performance.now();
-  engine = new WasmEngine(2026);
+  const [metaRes, demRes] = await Promise.all([
+    fetch('/data/meta.json'),
+    fetch('/data/dem.f32'),
+  ]);
+  if (!metaRes.ok || !demRes.ok) throw new Error('processed HiRISE data is unavailable');
+  const [metaJson, demBuffer] = await Promise.all([metaRes.text(), demRes.arrayBuffer()]);
+  engine = WasmEngine.from_processed(metaJson, new Uint8Array(demBuffer));
   return performance.now() - t0;
 })();
 

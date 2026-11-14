@@ -20,7 +20,7 @@ const api = createBackend();
 const S = {
   meta: null, terr: null, hazard: null, slope: null, rough: null, W: 0, H: 0, zmid: 0,
   goal: null, routes: {}, selected: null, obstacles: [], layer: 'none',
-  view: '3d', mapExtent: 'local', global: null,
+  view: '3d', mapExtent: 'local', global: null, regional: null,
   eva: null, // 進行中的 EVA
 };
 
@@ -81,6 +81,20 @@ resize();
 // 公尺座標（x 東、y 北、z 高程）→ three.js（y 朝上、北 = −z）
 const toV = (x, y, z) => new THREE.Vector3(x - S.W / 2, (z - S.zmid) * EXAG, S.H / 2 - y);
 const fromV = (v) => ({ x: v.x + S.W / 2, y: S.H / 2 - v.z });
+function localGeoBounds() {
+  const b = S.meta?.georeference?.crop_bounds_deg;
+  if (b) return { west: b.west, east: b.east, south: b.south, north: b.north };
+  const centerLon = S.meta?.georeference?.source_center_lon_deg ?? 0;
+  const centerLat = S.meta?.georeference?.source_center_lat_deg ?? 0;
+  const half = Math.max(S.W, S.H) / 111000 / 2;
+  return { west: centerLon - half, east: centerLon + half, south: centerLat - half, north: centerLat + half };
+}
+function geoV(x, y, lift = 0) {
+  const b = localGeoBounds();
+  const lon = b.west + (x / S.W) * (b.east - b.west);
+  const lat = b.south + (y / S.H) * (b.north - b.south);
+  return new THREE.Vector3(lon - 180, lift, -lat);
+}
 
 function heightAt(x, y) {
   const { w, h, data } = S.terr;
@@ -101,9 +115,10 @@ const isHazard = (x, y) => { const v = cellVal(S.hazard, x, y); return v === nul
 const slopeAt = (x, y) => ((cellVal(S.slope, x, y) ?? 0) / 254) * 45;
 
 // ---------------------------------------------------------------- terrain + layers
-let terrainMesh, mapMesh, globalMesh, rockMesh, baseColors, orthophotoTexture, globalTexture;
+let terrainMesh, mapMesh, globalMesh, regionalMesh, rockMesh, goalMapMarker, baseColors, orthophotoTexture, globalTexture, regionalTexture;
 const globalMapMeshes = [];
 const localMapObjects = [];
+const localGeoMapObjects = [];
 function buildTerrain() {
   const { w, h, data } = S.terr;
   const geo = new THREE.PlaneGeometry(S.W, S.H, w - 1, h - 1);
@@ -127,10 +142,12 @@ function buildTerrain() {
   terrainMesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
   scene.add(terrainMesh);
 
-  const mapGeo = new THREE.PlaneGeometry(S.W, S.H, w - 1, h - 1);
+  const bounds = localGeoBounds();
+  const mapGeo = new THREE.PlaneGeometry(bounds.east - bounds.west, bounds.north - bounds.south, w - 1, h - 1);
   mapGeo.rotateX(-Math.PI / 2);
   mapGeo.setAttribute('color', new THREE.BufferAttribute(baseColors.slice(), 3));
   mapMesh = new THREE.Mesh(mapGeo, new THREE.MeshBasicMaterial({ vertexColors: true }));
+  mapMesh.position.set((bounds.west + bounds.east) / 2 - 180, 0.01, -(bounds.south + bounds.north) / 2);
   mapMesh.visible = false;
   scene.add(mapMesh);
 }
@@ -164,6 +181,20 @@ async function loadGlobalTexture() {
   }
 }
 
+async function loadRegionalTexture() {
+  if (!regionalMesh || !S.regional?.textureUrl) return;
+  try {
+    regionalTexture = await new THREE.TextureLoader().loadAsync(S.regional.textureUrl);
+    regionalTexture.colorSpace = THREE.SRGBColorSpace;
+    regionalTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    regionalMesh.material.map = regionalTexture;
+    regionalMesh.material.needsUpdate = true;
+    log('Regional MOC texture loaded', 'ok');
+  } catch (e) {
+    log(`Regional MOC texture unavailable (${e.message})`, 'warn');
+  }
+}
+
 function buildGlobalMap() {
   if (!S.global) return;
   // The global overview is intentionally a flat satellite map. The MOLA DEM
@@ -178,6 +209,23 @@ function buildGlobalMap() {
     globalMapMeshes.push(copy);
   }
   globalMapMeshes.forEach((mesh) => { mesh.visible = false; scene.add(mesh); });
+}
+
+function buildRegionalMap() {
+  if (!S.regional) return;
+  const bounds = S.regional.meta.georeference;
+  const west = bounds.longitude_bounds_deg[0];
+  const east = bounds.longitude_bounds_deg[1];
+  const south = bounds.latitude_bounds_deg[0];
+  const north = bounds.latitude_bounds_deg[1];
+  const width = east - west;
+  const height = north - south;
+  const geo = new THREE.PlaneGeometry(width, height, 1, 1);
+  geo.rotateX(-Math.PI / 2);
+  regionalMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: '#bcbcbc' }));
+  regionalMesh.position.set((west + east) / 2 - 180, 0.005, -(south + north) / 2);
+  regionalMesh.visible = false;
+  scene.add(regionalMesh);
 }
 
 /** 在粗糙度高的地方散佈岩塊（InstancedMesh），讓危險區看得出來。 */
@@ -252,15 +300,29 @@ async function applyLayer() {
 }
 
 // ---------------------------------------------------------------- markers & beacons
-function label(text, cls, v) {
+function label(text, cls, v, collection = localMapObjects) {
   const div = document.createElement('div');
   div.className = `label3d ${cls}`;
   div.textContent = text;
   const o = new CSS2DObject(div);
   o.position.copy(v);
+  if (collection === localGeoMapObjects) o.visible = S.view === '2d';
   scene.add(o);
-  localMapObjects.push(o);
+  collection.push(o);
   return o;
+}
+function mapDot(color, ratio = 0.012) {
+  const b = localGeoBounds();
+  const radius = Math.max(b.east - b.west, b.north - b.south) * ratio;
+  const dot = new THREE.Mesh(
+    new THREE.CircleGeometry(radius, 16),
+    new THREE.MeshBasicMaterial({ color, depthTest: false, side: THREE.DoubleSide }),
+  );
+  dot.rotation.x = -Math.PI / 2;
+  dot.visible = S.view === '2d';
+  scene.add(dot);
+  localGeoMapObjects.push(dot);
+  return dot;
 }
 const beaconTop = {};
 function addMarkers() {
@@ -273,12 +335,18 @@ function addMarkers() {
   scene.add(hab);
   localMapObjects.push(hab);
   label('BASE / HABITAT', 'base', groundV(bx, by, 40));
+  const mapHab = mapDot('#e8eef5');
+  mapHab.position.copy(geoV(bx, by, 0.03));
+  label('BASE / HABITAT', 'base', geoV(bx, by, 0.04), localGeoMapObjects);
   for (const t of S.meta.targets) {
     const m = new THREE.Mesh(new THREE.OctahedronGeometry(6), new THREE.MeshLambertMaterial({ color: '#4dd6ff', emissive: '#0a3a4a' }));
     m.position.copy(groundV(t.x, t.y, 16));
     scene.add(m);
     localMapObjects.push(m);
     label(t.name, 'target', groundV(t.x, t.y, 34));
+    const mapTarget = mapDot('#4dd6ff');
+    mapTarget.position.copy(geoV(t.x, t.y, 0.03));
+    label(t.name, 'target', geoV(t.x, t.y, 0.04), localGeoMapObjects);
   }
   for (const b of S.meta.beacons) {
     const lora = b.kind === 'lora', hgt = lora ? 14 : 5;
@@ -290,6 +358,9 @@ function addMarkers() {
     localMapObjects.push(pole, top);
     beaconTop[b.id] = top.position.clone();
     label(`${lora ? 'LoRa' : 'UWB'} · ${b.label || b.id}`, b.kind, groundV(b.x, b.y, hgt + 10));
+    const mapBeacon = mapDot(lora ? '#ff9f43' : '#4dd6ff', lora ? 0.01 : 0.008);
+    mapBeacon.position.copy(geoV(b.x, b.y, 0.03));
+    label(`${lora ? 'LoRa' : 'UWB'} · ${b.label || b.id}`, b.kind, geoV(b.x, b.y, 0.04), localGeoMapObjects);
   }
 }
 let goalMarker;
@@ -301,7 +372,10 @@ function setGoal(x, y, name) {
     scene.add(goalMarker);
     localMapObjects.push(goalMarker);
   }
+  if (!goalMapMarker) goalMapMarker = mapDot('#ff7a3d', 0.016);
+  goalMapMarker.visible = S.view === '2d';
   goalMarker.position.copy(groundV(x, y, 12));
+  goalMapMarker.position.copy(geoV(x, y, 0.04));
   log(`Goal set: ${name}`);
 }
 
@@ -341,32 +415,57 @@ scene.add(obstacleGroup);
 
 // ---------------------------------------------------------------- routes
 const routeGroup = new THREE.Group();
+const routeMapGroup = new THREE.Group();
 scene.add(routeGroup);
-function routeMesh(route, color) {
+scene.add(routeMapGroup);
+function buildRouteMesh(route, color, project, group, radius) {
   const pts = [];
   for (let i = 0; i < route.path.length - 1; i++) {
     const [x0, y0] = route.path[i], [x1, y1] = route.path[i + 1];
     const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 6));
-    for (let s = 0; s < n; s++) pts.push(groundV(x0 + ((x1 - x0) * s) / n, y0 + ((y1 - y0) * s) / n, 1.5));
+    for (let s = 0; s < n; s++) pts.push(project(x0 + ((x1 - x0) * s) / n, y0 + ((y1 - y0) * s) / n));
   }
   const last = route.path.at(-1);
-  pts.push(groundV(last[0], last[1], 1.5));
+  pts.push(project(last[0], last[1]));
   const mesh = new THREE.Mesh(
-    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), Math.min(pts.length * 2, 5000), 1.6, 6, false),
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), Math.min(pts.length * 2, 5000), radius, 6, false),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 }),
   );
-  routeGroup.add(mesh);
   return mesh;
+}
+function routeMesh(route, color) {
+  const mapRadius = Math.max(localGeoBounds().east - localGeoBounds().west, localGeoBounds().north - localGeoBounds().south) * 0.006;
+  const terrain = buildRouteMesh(route, color, (x, y) => groundV(x, y, 1.5), routeGroup, 1.6);
+  const map = buildRouteMesh(route, color, (x, y) => geoV(x, y, 0.055), routeMapGroup, mapRadius);
+  routeGroup.add(terrain);
+  routeMapGroup.add(map);
+  routeMapGroup.visible = S.view === '2d';
+  return { terrain, map };
 }
 function clearRoutes() {
   routeGroup.children.slice().forEach((m) => { m.geometry.dispose(); routeGroup.remove(m); });
+  routeMapGroup.children.slice().forEach((m) => { m.geometry.dispose(); routeMapGroup.remove(m); });
   S.routes = {};
+}
+function localPlanningAvailable() {
+  return api.kind !== 'local' && S.mapExtent === 'local';
+}
+function updatePlannerAvailability() {
+  const available = localPlanningAvailable();
+  $('plan').disabled = !available || !!S.eva;
+  if (api.kind === 'local') $('plan').textContent = 'Route planner requires Rust/WASM';
+  else if (!available) $('plan').textContent = 'Select Mount Sharp to plan route';
+  else $('plan').textContent = 'Plan routes (3 modes)';
+  if (!available) $('start').disabled = true;
 }
 function selectRoute(key) {
   S.selected = key;
-  for (const [k, r] of Object.entries(S.routes)) r.mesh.material.opacity = k === key ? 1 : 0.25;
+  for (const [k, r] of Object.entries(S.routes)) {
+    r.mesh.material.opacity = k === key ? 1 : 0.25;
+    r.mapMesh.material.opacity = k === key ? 1 : 0.25;
+  }
   document.querySelectorAll('.route-card').forEach((c) => c.classList.toggle('selected', c.dataset.key === key));
-  $('start').disabled = !key || !!S.eva;
+  $('start').disabled = !key || !!S.eva || !localPlanningAvailable();
 }
 function card(key, r) {
   const div = document.createElement('div');
@@ -385,7 +484,12 @@ function card(key, r) {
   return div;
 }
 async function planRoutes() {
-  if (S.eva) return;
+  if (S.eva || !localPlanningAvailable()) return;
+  if (!S.goal) {
+    log('Click the Mount Sharp terrain first to set a navigation goal.', 'warn');
+    showAlert('SELECT A GOAL ON THE MOUNT SHARP MAP', true, 3000);
+    return;
+  }
   const t0 = performance.now();
   try {
     const res = await api.compare({ start: S.meta.base, goal: [S.goal.x, S.goal.y] });
@@ -393,7 +497,10 @@ async function planRoutes() {
     $('routes').innerHTML = '';
     for (const key of ['safe', 'balanced', 'science']) {
       const r = res[key];
-      if (r) S.routes[key] = { route: r, mesh: routeMesh(r, COLORS[key]) };
+      if (r) {
+        const meshes = routeMesh(r, COLORS[key]);
+        S.routes[key] = { route: r, mesh: meshes.terrain, mapMesh: meshes.map };
+      }
       $('routes').appendChild(card(key, r));
     }
     log(`3 routes planned on-board in ${(performance.now() - t0).toFixed(0)} ms`, 'ok');
@@ -404,7 +511,8 @@ async function planRoutes() {
 }
 function setActiveRoute(route, key) {
   clearRoutes();
-  S.routes[key] = { route, mesh: routeMesh(route, COLORS[key] || COLORS.safe) };
+  const meshes = routeMesh(route, COLORS[key] || COLORS.safe);
+  S.routes[key] = { route, mesh: meshes.terrain, mapMesh: meshes.map };
   S.eva.route = route;
   S.eva.routeKey = key;
 }
@@ -716,10 +824,10 @@ function reset() {
   $('routes').innerHTML = '';
   $('hud').classList.add('hidden');
   $('dpad').classList.add('hidden');
-  $('plan').disabled = false;
   ['start', 'rockfall', 'leak', 'drift', 'home'].forEach((id) => ($(id).disabled = true));
   overviewCamera();
   if (S.layer === 'pnr') applyLayer();
+  updatePlannerAvailability();
   log('Reset');
 }
 
@@ -738,16 +846,40 @@ function showAlert(text, info, ms) {
   clearTimeout(alertTimer);
   alertTimer = setTimeout(() => a.classList.add('hidden'), ms);
 }
+function mapExtentInfo() {
+  if (S.mapExtent === 'global' && S.global) return { width: 360, height: 180, centerX: 0, centerZ: 0, wraps: true };
+  if (S.mapExtent === 'regional' && S.regional) {
+    const b = S.regional.meta.georeference;
+    return {
+      width: b.longitude_bounds_deg[1] - b.longitude_bounds_deg[0],
+      height: b.latitude_bounds_deg[1] - b.latitude_bounds_deg[0],
+      centerX: (b.longitude_bounds_deg[0] + b.longitude_bounds_deg[1]) / 2 - 180,
+      centerZ: -(b.latitude_bounds_deg[0] + b.latitude_bounds_deg[1]) / 2,
+      wraps: false,
+    };
+  }
+  const b = localGeoBounds();
+  return {
+    width: b.east - b.west,
+    height: b.north - b.south,
+    centerX: (b.west + b.east) / 2 - 180,
+    centerZ: -(b.south + b.north) / 2,
+    wraps: false,
+  };
+}
 function overviewCamera() {
   if (!mapCamera || !mapControls) return;
-  const globalMap = S.view === '2d' && S.mapExtent === 'global' && S.global;
-  const width = globalMap ? 360 : S.W;
-  const height = globalMap ? 180 : S.H;
-  const shift = innerWidth > 700 ? (globalMap ? -45 : -S.W * 0.16) : 0;
+  const extent = mapExtentInfo();
+  const shift = innerWidth > 700
+    ? S.view === '2d'
+      ? (S.mapExtent === 'global' ? -45 : S.mapExtent === 'regional' ? -4 : -extent.width * 0.16)
+      : -S.W * 0.16
+    : 0;
+  const centerX = extent.centerX + shift;
   if (S.view === '2d') {
-    mapCamera.position.set(shift, Math.max(width, height) * 1.5, 0);
+    mapCamera.position.set(centerX, Math.max(extent.width, extent.height) * 1.5, extent.centerZ);
     mapCamera.up.set(0, 0, -1);
-    controls.target.set(shift, 0, 0);
+    controls.target.set(centerX, 0, extent.centerZ);
     mapCamera.zoom = 1;
     mapCamera.lookAt(controls.target);
   } else {
@@ -759,10 +891,10 @@ function overviewCamera() {
 
 function createMapCamera() {
   const aspect = innerWidth / innerHeight;
-  mapViewExtent = Math.max(S.W, S.H) * 0.62;
+  mapViewExtent = 180;
   mapCamera = new THREE.OrthographicCamera(
     -mapViewExtent * aspect, mapViewExtent * aspect,
-    mapViewExtent, -mapViewExtent, 0.1, 20000,
+    mapViewExtent, -mapViewExtent, 0.00001, 20000,
   );
   mapCamera.up.set(0, 0, -1);
   mapControls = new OrbitControls(mapCamera, renderer.domElement);
@@ -772,16 +904,15 @@ function createMapCamera() {
   mapControls.mouseButtons.LEFT = THREE.MOUSE.PAN;
   mapControls.touches.ONE = THREE.TOUCH.PAN;
   mapControls.minZoom = 0.75;
-  mapControls.maxZoom = 12;
+  mapControls.maxZoom = 100000;
   mapControls.zoomToCursor = true;
 }
 
 function fitMapCamera() {
   if (!mapCamera) return;
   const aspect = innerWidth / innerHeight;
-  const width = S.mapExtent === 'global' && S.global ? 360 : S.W;
-  const height = S.mapExtent === 'global' && S.global ? 180 : S.H;
-  mapViewExtent = Math.max(height / 2, width / (2 * aspect)) * 1.08;
+  const extent = mapExtentInfo();
+  mapViewExtent = Math.max(extent.height / 2, extent.width / (2 * aspect)) * 1.08;
   mapCamera.left = -mapViewExtent * aspect;
   mapCamera.right = mapViewExtent * aspect;
   mapCamera.top = mapViewExtent;
@@ -791,22 +922,24 @@ function fitMapCamera() {
 
 function syncMapVisibility() {
   const isMap = S.view === '2d';
-  const globalMap = isMap && S.mapExtent === 'global' && !!S.global;
   terrainMesh.visible = !isMap;
-  mapMesh.visible = isMap && !globalMap;
-  globalMapMeshes.forEach((mesh) => { mesh.visible = globalMap; });
+  mapMesh.visible = isMap;
+  globalMapMeshes.forEach((mesh) => { mesh.visible = isMap; });
+  if (regionalMesh) regionalMesh.visible = isMap;
   if (rockMesh) rockMesh.visible = !isMap;
-  localMapObjects.forEach((object) => { object.visible = !globalMap; });
-  astro.visible = globalMap ? false : !!S.eva;
-  estMarker.visible = globalMap ? false : !!S.eva;
-  beaconLines.visible = !globalMap;
-  obstacleGroup.visible = !globalMap;
-  routeGroup.visible = !globalMap;
+  localMapObjects.forEach((object) => { object.visible = !isMap; });
+  localGeoMapObjects.forEach((object) => { object.visible = isMap; });
+  astro.visible = !isMap && !!S.eva;
+  estMarker.visible = !isMap && !!S.eva;
+  beaconLines.visible = !isMap;
+  obstacleGroup.visible = !isMap;
+  routeGroup.visible = !isMap;
+  routeMapGroup.visible = isMap;
 }
 
 /** Keep the equirectangular world continuous while the user pans east/west. */
 function wrapGlobalMap() {
-  if (S.view !== '2d' || S.mapExtent !== 'global' || !mapCamera || !mapControls) return;
+  if (S.view !== '2d' || !mapCamera || !mapControls) return;
   const worldWidth = 360;
   const shift = Math.floor((mapControls.target.x + worldWidth / 2) / worldWidth) * worldWidth;
   if (!shift) return;
@@ -815,26 +948,28 @@ function wrapGlobalMap() {
 }
 
 function setMapExtent(extent) {
-  S.mapExtent = extent === 'global' && S.global ? 'global' : 'local';
+  const next = extent === 'global' && S.global ? 'global'
+    : extent === 'regional' && S.regional ? 'regional' : 'local';
+  S.mapExtent = next;
   const globalMap = S.mapExtent === 'global';
+  const regionalMap = S.mapExtent === 'regional';
   $('extent-global').classList.toggle('active', globalMap);
-  $('extent-local').classList.toggle('active', !globalMap);
+  $('extent-regional').classList.toggle('active', regionalMap);
+  $('extent-local').classList.toggle('active', !globalMap && !regionalMap);
   $('extent-global').setAttribute('aria-pressed', String(globalMap));
-  $('extent-local').setAttribute('aria-pressed', String(!globalMap));
+  $('extent-regional').setAttribute('aria-pressed', String(regionalMap));
+  $('extent-local').setAttribute('aria-pressed', String(!globalMap && !regionalMap));
   for (const option of $('layer').options) {
-    option.disabled = globalMap || (api.kind === 'local' && !['none', 'slope', 'hazard'].includes(option.value));
-  }
-  if (globalMap && S.layer !== 'none') {
-    S.layer = 'none';
-    $('layer').value = 'none';
-    applyLayer().catch((err) => log(err.message, 'bad'));
+    option.disabled = api.kind === 'local' && !['none', 'slope', 'hazard'].includes(option.value);
   }
   fitMapCamera();
   syncMapVisibility();
+  updatePlannerAvailability();
   if (S.view === '2d') {
     $('view-hint').textContent = globalMap
       ? 'Drag to pan · wheel to zoom · east/west wraps'
-      : 'Drag to pan · wheel to zoom · north is up';
+      : regionalMap ? 'Drag to pan · wheel to zoom · Gale MOC 230 m/pixel'
+        : 'Drag to pan · wheel to zoom · north is up';
     overviewCamera();
   }
 }
@@ -854,7 +989,9 @@ function setViewMode(mode) {
   $('view-3d').setAttribute('aria-pressed', String(!isMap));
   $('view-2d').setAttribute('aria-pressed', String(isMap));
   $('view-hint').textContent = isMap
-    ? (S.mapExtent === 'global' ? 'Drag to pan · wheel to zoom · east/west wraps' : 'Drag to pan · wheel to zoom · north is up')
+    ? (S.mapExtent === 'global' ? 'Drag to pan · wheel to zoom · east/west wraps'
+      : S.mapExtent === 'regional' ? 'Drag to pan · wheel to zoom · Gale MOC 230 m/pixel'
+        : 'Drag to pan · wheel to zoom · north is up')
     : 'Drag to orbit · wheel to zoom';
   overviewCamera();
 }
@@ -862,12 +999,18 @@ function setViewMode(mode) {
 let down = null;
 renderer.domElement.addEventListener('pointerdown', (e) => (down = [e.clientX, e.clientY]));
 renderer.domElement.addEventListener('pointerup', (e) => {
-  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5 || S.eva || S.mapExtent === 'global') return;
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5 || S.eva || S.mapExtent !== 'local') return;
   const ray = new THREE.Raycaster();
   ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
-  const hit = ray.intersectObject(terrainMesh)[0];
+  const hit = ray.intersectObject(S.view === '2d' ? mapMesh : terrainMesh)[0];
   if (!hit) return;
-  const p = fromV(hit.point);
+  const p = S.view === '2d' ? (() => {
+    const b = localGeoBounds();
+    return {
+      x: ((hit.point.x + 180 - b.west) / (b.east - b.west)) * S.W,
+      y: ((-hit.point.z - b.south) / (b.north - b.south)) * S.H,
+    };
+  })() : fromV(hit.point);
   $('target').value = 'custom';
   $('target-desc').textContent = `Custom goal at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) m`;
   setGoal(p.x, p.y, `custom point (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) m`);
@@ -886,9 +1029,11 @@ async function boot() {
   S.H = S.meta.height * S.meta.cell_m;
   S.zmid = (S.meta.z_min + S.meta.z_max) / 2;
   S.global = api.globalMap ? await api.globalMap() : null;
+  S.regional = api.regionalMap ? await api.regionalMap() : null;
   createMapCamera();
   buildTerrain();
   buildGlobalMap();
+  buildRegionalMap();
   scatterRocks();
   addMarkers();
   overviewCamera();
@@ -908,6 +1053,7 @@ async function boot() {
   $('view-3d').onclick = () => setViewMode('3d');
   $('view-2d').onclick = () => setViewMode('2d');
   $('extent-global').onclick = () => setMapExtent('global');
+  $('extent-regional').onclick = () => setMapExtent('regional');
   $('extent-local').onclick = () => setMapExtent('local');
   $('layer').onchange = (e) => { S.layer = e.target.value; applyLayer().catch((err) => log(err.message, 'bad')); };
   $('plan').onclick = planRoutes;
@@ -928,11 +1074,14 @@ async function boot() {
     $('extent-switch').style.display = S.global ? 'flex' : 'none';
     for (const option of $('layer').options) option.disabled = !['none', 'slope', 'hazard'].includes(option.value);
     log('Map viewer mode: zoom and orbit are available; route planning is disabled until Rust/WASM is built.', 'warn');
+  } else {
+    $('extent-switch').style.display = 'none';
   }
   $('loading').classList.add('done');
   log(`Loaded ${S.meta.name} (${S.meta.width}×${S.meta.height} @ ${S.meta.cell_m} m); engine ready in ${(build_ms || performance.now() - t0).toFixed(0)} ms`, 'ok');
-  await Promise.all([loadOrthophoto(), loadGlobalTexture()]);
+  await Promise.all([loadOrthophoto(), loadGlobalTexture(), loadRegionalTexture()]);
   setViewMode(api.kind === 'local' ? '2d' : '3d');
+  $('extent-switch').style.display = S.global ? 'flex' : 'none';
   setMapExtent(api.kind === 'local' && S.global ? 'global' : 'local');
 }
 

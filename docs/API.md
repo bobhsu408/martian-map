@@ -2,7 +2,7 @@
 # Martian Map Engine — API 契約 v1
 
 規劃引擎 `mars-core` 有兩種執行方式，介面完全相同：
-- **WebAssembly（預設）**：`mars-wasm` 在瀏覽器的 Web Worker 裡執行，網頁本身就是完整系統，可放在 GitHub Pages；載入後**拔網路也能用**。前端用 `web/src/api.js` 呼叫。
+- **WebAssembly（`?wasm`）**：`mars-wasm` 在瀏覽器的 Web Worker 裡執行，會載入真實的 `data/processed` HiRISE DEM；網頁本身就是完整系統，可放在 GitHub Pages；載入後**拔網路也能用**。前端用 `web/src/api.js` 呼叫。
 - **本機 server**：`mars-server`（Rust / axum），`http://localhost:8080`，同時提供 `web/dist` 靜態檔。網址加 `?server` 讓前端改用它。
 本文件是前後端的唯一依據；要改請先改這份文件，並通知對方。
 

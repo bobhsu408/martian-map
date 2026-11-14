@@ -43,6 +43,14 @@
 - 輸出：`data/processed/global/satellite.jpg`，8192×4096
 - 用途：全球衛星式視覺總覽；不取代 MOLA DEM 或局部 HiRISE 導航資料
 
+Mount Sharp 區域另外接入 NASA MGS/MOC Atlas：
+
+- 原始 tile：`data/raw/official/moc/moc_256_N-30_120.png`
+- 覆蓋範圍：120–150°E、30°S–0°，包含 Mount Sharp 約 137.3°E、4.8°S
+- 原始解析度：256 pixels/degree，約 230 m/pixel
+- 輸出：`data/processed/regional/moc.jpg`
+- 用途：全球總覽與 HiRISE 局部之間的區域定位，不直接用於公尺級路徑規劃
+
 原始 `.IMG` 是 PDS3 格式，不是普通的裸資料檔。檔案開頭有 label，label 會描述影像資料的偏移量、寬高、資料型別、投影與 nodata 值。直接從 byte 0 讀取會把 label 誤當成高程，因此必須先解析 PDS label。
 
 ## 3. 輸出格式
@@ -64,6 +72,14 @@ data/processed/global/
 ├── ortho.jpg        # MOLA 彩色陰影地形，不是光學衛星影像
 ├── satellite.jpg    # Viking merged color mosaic
 ├── valid_mask.u8
+└── meta.json
+```
+
+區域 MOC package：
+
+```text
+data/processed/regional/
+├── moc.jpg
 └── meta.json
 ```
 
@@ -172,6 +188,16 @@ NASA/ASU Viking merged color mosaic
         ├─ 下載北、南半球各 4 張 90° 經度瓦片
         ├─ 依 0–360° 經度縮放並拼接成 8192×4096 texture
         └─ 輸出 satellite.jpg
+```
+
+MOC 區域 context 流程：
+
+```text
+NASA MGS/MOC Atlas 30°×30° tile
+        │
+        ├─ 驗證來源 SHA-256 與座標範圍
+        ├─ 轉成瀏覽器使用的 JPEG texture
+        └─ 輸出 data/processed/regional/moc.jpg + meta.json
 ```
 
 ## 6. 與現有系統的整合
@@ -324,21 +350,26 @@ cargo test
 - [ ] 讓 `mars-core` 載入並使用 `valid_mask.u8`，將無效格直接標成 hazard。
 - [ ] 用 `World::load_processed` 實際載入 `data/processed`。
 - [ ] 啟動 Axum server，確認 `/api/meta`、`/api/terrain`、`/api/layer/slope` 與 `/api/layer/rough`。
-- [ ] 在 Rust core 上確認 HiRISE DEM 的坡度、粗糙度與 A* 路徑結果。
+- [ ] 在有 Rust toolchain 後，用 `cargo test` 與 Axum server 直接確認 HiRISE DEM 的坡度、粗糙度與 A* 路徑結果。
+- [x] 讓瀏覽器 WASM 使用 `WasmEngine::from_processed` 載入真實 HiRISE `meta.json + dem.f32`。
+- [x] 將 WASM 路徑規劃接回真實 DEM，支援 Safe、Balanced、Science 三種路線與 EVA 導航。
 - [x] 在 Three.js 顯示真實 DEM，確認影像與地形沒有上下或東西方向顛倒。
 - [x] 將 HiRISE 正射影像接成視覺紋理。
 - [x] 下載 NASA PDS MOLA 16 ppd 全球地形與 label。
 - [x] 建立 `tools/preprocess_mola.py`，輸出 4 ppd 全球 DEM package。
-- [x] 將 MOLA 全球資料、Viking 衛星式底圖、局部 HiRISE 與 2D 範圍切換接入 Three.js/Vite。
+- [x] 將 MOLA 全球資料、Viking 衛星式底圖、Gale MOC 區域 context、局部 HiRISE 與 2D 範圍切換接入 Three.js/Vite。
 - [x] 全球 2D 地圖支援滑鼠拖曳、滾輪縮放與東西方向無縫循環。
+- [x] 將 Viking、MOC、HiRISE 三層 2D 影像統一到同一個 simple cylindrical 火星座標系，改為同一張可連續縮放的地圖。
 - [ ] 建立科學目標 `targets.json`，並以來源連結與座標紀錄每一個目標。
-- [ ] 加入 CTX 或 USGS Gale mosaic 作為光學區域背景。
+- [x] 加入 NASA MGS/MOC Atlas 作為 Gale 區域光學背景。
+- [ ] 以 CTX 或 USGS Gale mosaic 升級區域光學背景解析度。
 - [ ] 將全球 Viking/MOC/CTX 影像升級為多解析度 tile pyramid。
+- [ ] 將 CTX global mosaic 以按需 4°×4° tile 接入，避免下載 TB 級完整資料。
 - [ ] 在 Rust 工具鏈可用後重新執行 `cargo test` 與資料整合測試。
 
 ### 本次執行紀錄
 
-2026-11-14：已完成前處理工具、2 km 局部資料產生、MOLA 全球資料下載與 4 ppd package、Viking 全球衛星式底圖下載與拼接、格式驗證、座標列方向驗證、不依賴 Rust/WASM 的 Three.js 全球／局部地圖 viewer，以及 HiRISE 正射影像與全球 texture pipeline。已完成 Vite production build；當前環境沒有 `cargo`/`rustc` 指令，因此 Rust core、Axum server 和 WASM 尚未宣稱驗證完成。全球光學底圖目前是輕量化 Viking mosaic，CTX/HiRISE 多解析度全球瓦片仍是後續待辦。
+2026-11-14：已完成前處理工具、2 km 局部資料產生、MOLA 全球資料下載與 4 ppd package、Viking 全球衛星式底圖下載與拼接、Gale MOC 區域 context、格式驗證、座標列方向驗證、Three.js 單一火星座標 2D 地圖、HiRISE 正射影像與多層 texture pipeline，以及瀏覽器 WASM 使用真實 HiRISE DEM 的路徑規劃與 EVA 導航接入。已完成 Vite production build，並用 Node WASM runtime 實際建立 1977×1977 DEM engine、比較三種路線；尚未執行 `cargo test` 或 Axum server 整合測試，因當前環境沒有 `cargo`/`rustc` 指令。CTX 5 m/pixel 全球 mosaic 因完整資料達 TB 級，保留為按需 tile 的後續工作。
 
 資料驗證指令：
 

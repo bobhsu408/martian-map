@@ -7,6 +7,7 @@ const processedDir = path.resolve(fileURLToPath(new URL('.', import.meta.url)), 
 const processedFiles = [
   'meta.json', 'dem.f32', 'valid_mask.u8', 'ortho.jpg',
   'global/meta.json', 'global/dem.f32', 'global/valid_mask.u8', 'global/ortho.jpg', 'global/satellite.jpg',
+  'regional/meta.json', 'regional/moc.jpg',
 ];
 
 // Serve and package only the processed DEM. The original .IMG remains outside

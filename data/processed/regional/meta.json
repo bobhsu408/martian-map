@@ -1,0 +1,30 @@
+{
+  "name": "Gale region MOC Atlas",
+  "source": "NASA MGS/MOC Atlas 256 pixels/degree",
+  "source_url": "https://www.mars.asu.edu/data/moc_256/",
+  "width": 7680,
+  "height": 7680,
+  "visual": {
+    "satellite": "moc.jpg",
+    "satellite_kind": "MOC visible-light wide-angle regional mosaic"
+  },
+  "georeference": {
+    "projection": "SIMPLE CYLINDRICAL",
+    "latitude_type": "PLANETOCENTRIC",
+    "positive_longitude_direction": "EAST",
+    "longitude_bounds_deg": [
+      120.0,
+      150.0
+    ],
+    "latitude_bounds_deg": [
+      -30.0,
+      0.0
+    ],
+    "cell_deg": 0.00390625,
+    "row_order": "north-first"
+  },
+  "provenance": {
+    "input_file": "D:\\NASAHackathon\\martian-map\\data\\raw\\official\\moc\\moc_256_N-30_120.png",
+    "input_sha256": "30ef15286d03d353ddf1a9a78781857b27ac528692505f39219a87ac8ebbae46"
+  }
+}
