@@ -17,6 +17,7 @@
     <!-- 第一次使用的說明 -->
     <div id="intro" class="hidden">
       <div class="intro-card">
+        <button class="lang-btn" type="button">中文</button>
         <h2>You are an astronaut on Mount Sharp</h2>
         <p>The ground is real NASA HiRISE terrain. Walk with <b>W A S D</b> or the arrow keys, drag to look around, <b>V</b> switches first / third person.</p>
         <p>The tablet in your hands is <b>Martian Map</b>. Idle, it shows a compass and how dangerous the ground is. Press <b>Tab</b> or <b>M</b> to raise it:</p>
@@ -40,7 +41,7 @@
       <div class="tab-body">
     <aside id="panel">
       <header>
-        <h1>MARTIAN MAP</h1>
+        <h1>MARTIAN MAP <button class="lang-btn" type="button">中文</button></h1>
         <div class="sub">Offline EVA planner for Mars astronauts</div>
         <div class="badge" id="badge">● OFFLINE · ON-BOARD COMPUTE</div>
       </header>
@@ -79,6 +80,11 @@
             <button id="leak" disabled title="Suit oxygen leak">O₂ leak</button>
             <button id="home" disabled title="Plan the safest way back">⌂ Return to base</button>
           </div>
+          <div class="row">
+            <button id="linkloss" disabled title="Habitat, rover and relay beacons go silent">📡 Lose base link</button>
+            <button id="deploy" disabled title="Drop a UWB beacon here (key B)">📍 Deploy beacon (4 left)</button>
+          </div>
+          <div class="hint">Position fix needs ≥ 3 beacons in line of sight — more beacons, smaller error circle. Fewer than 3 → dead reckoning, error grows as you walk.</div>
         </div>
         <button id="reset" class="ghost">↺ Start over</button>
       </section>

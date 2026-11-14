@@ -198,6 +198,12 @@ pub struct SimRequest {
     /// 自上次估計以來的位移向量 [dx, dy]（公尺，來自步數／慣性量測）
     pub step_m: Option<[f32; 2]>,
     pub seed: Option<u64>,
+    /// 失聯的信標 id（例如和基地斷線時關掉 hab）
+    #[serde(default)]
+    pub disabled: Vec<String>,
+    /// 太空人在 EVA 途中自行布設的信標
+    #[serde(default)]
+    pub extra_beacons: Vec<Beacon>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -232,7 +238,11 @@ pub fn simulate(
     let (tx, ty) = (req.true_pos[0], req.true_pos[1]);
     let mut meas = vec![];
     let mut visible = vec![];
-    for b in beacons {
+    let active = beacons
+        .iter()
+        .filter(|b| !req.disabled.iter().any(|d| d == &b.id))
+        .chain(req.extra_beacons.iter());
+    for b in active {
         if let Some(r) = visible_range(dem, b, nav, tx, ty) {
             let s = spec(nav, b.kind).sigma_m;
             let noisy = (r + s * rng.normal()).max(0.0);
@@ -257,7 +267,12 @@ pub fn simulate(
     if meas.len() >= 3 {
         // 用「上一個估計 + 位移」當初始值，收斂快且避開鏡像解
         let init = (prev[0] + step[0], prev[1] + step[1]);
-        if let Some((x, y, s)) = multilaterate(dem, &meas, init, nav.suit_antenna_m) {
+        // 幾何退化（信標擠在一起）時多點定位的誤差會比航位推算還大 → 不採用
+        let dr_sigma =
+            prev_sigma + nav.dr_growth_per_m * (step[0] * step[0] + step[1] * step[1]).sqrt();
+        if let Some((x, y, s)) = multilaterate(dem, &meas, init, nav.suit_antenna_m)
+            .filter(|&(_, _, s)| s.is_finite() && (s <= dr_sigma.max(30.0)))
+        {
             return SimResult {
                 estimate: [x, y],
                 sigma_m: s,
@@ -376,6 +391,8 @@ mod tests {
                     prev_sigma: None,
                     step_m: None,
                     seed: Some(seed),
+                    disabled: vec![],
+                    extra_beacons: vec![],
                 },
             );
             assert_eq!(r.mode, "multilateration");
@@ -410,6 +427,8 @@ mod tests {
                 prev_sigma: Some(1.0),
                 step_m: Some([10.0, 0.0]),
                 seed: Some(3),
+                disabled: vec![],
+                extra_beacons: vec![],
             },
         );
         assert_eq!(r.mode, "dead_reckoning");
@@ -428,5 +447,44 @@ mod tests {
         let c = coverage(&dem, &bs, &nav, 4);
         assert_eq!(c.get(5, 5), 2.0); // 兩個都看得到
         assert_eq!(c.get(95, 95), 1.0); // UWB 超出 150 m
+    }
+
+    #[test]
+    fn disabled_and_deployed_beacons() {
+        let dem = flat(200, 200, 1.0);
+        let nav = NavParams::default();
+        let base = vec![
+            beacon("a", BeaconKind::Uwb, 20.0, 20.0),
+            beacon("b", BeaconKind::Uwb, 60.0, 20.0),
+            beacon("c", BeaconKind::Uwb, 40.0, 60.0),
+        ];
+        let mut req = SimRequest {
+            true_pos: [40.0, 35.0],
+            prev_estimate: None,
+            prev_sigma: None,
+            step_m: None,
+            seed: Some(3),
+            disabled: vec![],
+            extra_beacons: vec![],
+        };
+        assert_eq!(simulate(&dem, &base, &nav, &req).mode, "multilateration");
+        // 斷了一個 → 只剩 2 個，改用航位推算
+        req.disabled = vec!["a".into()];
+        let r = simulate(&dem, &base, &nav, &req);
+        assert_eq!(r.mode, "dead_reckoning");
+        assert_eq!(r.visible_beacons.len(), 2);
+        // 自己放一個新信標 → 又回到多點定位
+        req.extra_beacons = vec![beacon("d1", BeaconKind::Uwb, 25.0, 45.0)];
+        let r = simulate(&dem, &base, &nav, &req);
+        assert_eq!(r.mode, "multilateration");
+        assert!(r.visible_beacons.iter().any(|b| b.id == "d1"));
+        // 新信標擠在已有信標旁邊（幾何退化）→ 不能讓誤差爆掉
+        req.extra_beacons = vec![
+            beacon("d1", BeaconKind::Uwb, 60.0, 20.1),
+            beacon("d2", BeaconKind::Uwb, 60.1, 20.0),
+        ];
+        req.prev_sigma = Some(2.0);
+        let r = simulate(&dem, &base, &nav, &req);
+        assert!(r.sigma_m < 50.0, "sigma {}", r.sigma_m);
     }
 }

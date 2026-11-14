@@ -237,3 +237,8 @@ button.ghost { background: transparent; margin-top: 10px; }
 #tb-ring { position: absolute; inset: 0; transition: transform 0.12s linear; }
 @media (pointer: fine) { #dpad { display: none; } }
 #cam-hint.hidden { display: none; }
+
+/* 中英切換按鈕 */
+.lang-btn { float: right; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid #ff8a4c; background: transparent; color: #ff8a4c; cursor: pointer; letter-spacing: 0; }
+.lang-btn:hover { background: #ff8a4c; color: #111; }
+.intro-card { position: relative; }

@@ -186,6 +186,8 @@ EVA 進行中發生狀況時呼叫：回報新障礙，或 O2 低於預期。
 ```
 - `step_m`：自上次估計以來的位移 [dx, dy]（步數／慣性量測），航位推算用。
 - 可見信標 ≥ 3 → `mode: "multilateration"`（Gauss–Newton 加權最小平方）；否則 `"dead_reckoning"`，`sigma_m` 每走 1 m 增加 `dr_growth_per_m`。
+- 選填 `disabled: ["hab", ...]`：失聯的信標 id（例如和基地斷線）。選填 `extra_beacons: [{"id","kind","x","y","label"}]`：太空人途中自行布設的信標。
+- 信標擠在一起導致幾何退化、多點定位誤差反而比航位推算大時，改回航位推算。
 
 ## 8. `POST /api/track` — 偏離路線偵測（HUD 用）
 ```json
