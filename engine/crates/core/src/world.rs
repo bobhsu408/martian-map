@@ -18,6 +18,26 @@ pub struct Target {
     pub image: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum BeaconKind {
+    /// 長距離（基地、探測車）
+    Lora,
+    /// 短距離高精度（可攜式，沿路線佈設）
+    Uwb,
+}
+
+/// 本地無線電信標（定位用，不依賴地球或 GPS）。
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Beacon {
+    pub id: String,
+    pub kind: BeaconKind,
+    pub x: f32,
+    pub y: f32,
+    #[serde(default)]
+    pub label: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct World {
     pub name: String,
@@ -25,6 +45,7 @@ pub struct World {
     pub dem: Grid<f32>,
     pub base: (f32, f32),
     pub targets: Vec<Target>,
+    pub beacons: Vec<Beacon>,
 }
 
 /// data/processed/meta.json 的格式（由 tools/preprocess.py 產生）。
@@ -38,6 +59,8 @@ pub struct ProcessedMeta {
     pub base: [f32; 2],
     #[serde(default)]
     pub targets: Vec<Target>,
+    #[serde(default)]
+    pub beacons: Vec<Beacon>,
 }
 
 impl World {
@@ -50,7 +73,14 @@ impl World {
         if tpath.exists() {
             targets = serde_json::from_slice(&std::fs::read(tpath)?)?;
         }
-        Ok(Self { name: meta.name, source: meta.source, dem, base: (meta.base[0], meta.base[1]), targets })
+        Ok(Self {
+            name: meta.name,
+            source: meta.source,
+            dem,
+            base: (meta.base[0], meta.base[1]),
+            targets,
+            beacons: meta.beacons,
+        })
     }
 
     pub fn target(&self, id: &str) -> Option<&Target> {

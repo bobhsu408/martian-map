@@ -10,8 +10,16 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 const SQRT2: f32 = std::f32::consts::SQRT_2;
-const DIRS: [(isize, isize, f32); 8] =
-    [(1, 0, 1.0), (-1, 0, 1.0), (0, 1, 1.0), (0, -1, 1.0), (1, 1, SQRT2), (1, -1, SQRT2), (-1, 1, SQRT2), (-1, -1, SQRT2)];
+const DIRS: [(isize, isize, f32); 8] = [
+    (1, 0, 1.0),
+    (-1, 0, 1.0),
+    (0, 1, 1.0),
+    (0, -1, 1.0),
+    (1, 1, SQRT2),
+    (1, -1, SQRT2),
+    (-1, 1, SQRT2),
+    (-1, -1, SQRT2),
+];
 
 #[derive(Copy, Clone, PartialEq)]
 struct Node {
@@ -83,7 +91,10 @@ pub fn astar(cost: &Grid<f32>, start: usize, goal: usize, min_cost: f32) -> Opti
     let mut closed = vec![false; n];
     let mut heap = BinaryHeap::new();
     g[start] = 0.0;
-    heap.push(Node { f: heur(start), idx: start });
+    heap.push(Node {
+        f: heur(start),
+        idx: start,
+    });
     while let Some(Node { idx, .. }) = heap.pop() {
         if closed[idx] {
             continue;
@@ -96,7 +107,10 @@ pub fn astar(cost: &Grid<f32>, start: usize, goal: usize, min_cost: f32) -> Opti
                 cells.push(k);
             }
             cells.reverse();
-            return Some(PathResult { cells, cost: g[goal] });
+            return Some(PathResult {
+                cells,
+                cost: g[goal],
+            });
         }
         closed[idx] = true;
         let gk = g[idx];
@@ -105,7 +119,10 @@ pub fn astar(cost: &Grid<f32>, start: usize, goal: usize, min_cost: f32) -> Opti
             if ng < g[nb] {
                 g[nb] = ng;
                 parent[nb] = idx;
-                heap.push(Node { f: ng + heur(nb), idx: nb });
+                heap.push(Node {
+                    f: ng + heur(nb),
+                    idx: nb,
+                });
             }
         });
     }
@@ -153,7 +170,11 @@ mod tests {
                 s ^= s >> 7;
                 s ^= s << 17;
                 let u = (s % 10_000) as f64 / 10_000.0;
-                if u < wall { f32::INFINITY } else { 0.1 + (u * 5.0) as f32 }
+                if u < wall {
+                    f32::INFINITY
+                } else {
+                    0.1 + (u * 5.0) as f32
+                }
             })
             .collect();
         Grid::from_vec(w, h, 1.0, data)
@@ -163,7 +184,9 @@ mod tests {
     fn oracle(cost: &Grid<f32>, s: usize, t: usize) -> Option<i64> {
         let succ = |&k: &usize| {
             let mut v = vec![];
-            for_each_edge(cost, k, |n, c| v.push((n, (c as f64 * 1000.0).round() as i64)));
+            for_each_edge(cost, k, |n, c| {
+                v.push((n, (c as f64 * 1000.0).round() as i64))
+            });
             v
         };
         pathfinding::prelude::dijkstra(&s, succ, |&k| k == t).map(|(_, c)| c)
@@ -185,11 +208,22 @@ mod tests {
         }
         let p = astar(&g, g.idx(0, 0), g.idx(6, 0), 1.0).unwrap();
         assert!(p.cells.iter().all(|&k| g.data[k].is_finite()));
-        assert!(p.cells.iter().any(|&k| k / g.w == 6), "must go over the wall top");
+        assert!(
+            p.cells.iter().any(|&k| k / g.w == 6),
+            "must go over the wall top"
+        );
         for w in p.cells.windows(2) {
             let (a, b) = (w[0], w[1]);
-            let (ai, aj, bi, bj) = ((a % 7) as isize, (a / 7) as isize, (b % 7) as isize, (b / 7) as isize);
-            assert!((ai - bi).abs() <= 1 && (aj - bj).abs() <= 1, "path must be contiguous");
+            let (ai, aj, bi, bj) = (
+                (a % 7) as isize,
+                (a / 7) as isize,
+                (b % 7) as isize,
+                (b / 7) as isize,
+            );
+            assert!(
+                (ai - bi).abs() <= 1 && (aj - bj).abs() <= 1,
+                "path must be contiguous"
+            );
         }
     }
 

@@ -10,11 +10,13 @@
 //! 全部由種子決定，同一個種子永遠產生同一張地圖。
 
 use crate::grid::Grid;
-use crate::world::{Target, World};
+use crate::world::{Beacon, BeaconKind, Target, World};
 
 #[inline]
 fn hash2(i: i32, j: i32, seed: u32) -> f32 {
-    let mut h = (i as u32).wrapping_mul(0x8da6_b343) ^ (j as u32).wrapping_mul(0xd816_3841) ^ seed.wrapping_mul(0xcb1a_b31f);
+    let mut h = (i as u32).wrapping_mul(0x8da6_b343)
+        ^ (j as u32).wrapping_mul(0xd816_3841)
+        ^ seed.wrapping_mul(0xcb1a_b31f);
     h ^= h >> 13;
     h = h.wrapping_mul(0x5bd1_e995);
     h ^= h >> 15;
@@ -76,7 +78,12 @@ pub struct SynthSpec {
 
 impl Default for SynthSpec {
     fn default() -> Self {
-        Self { w: 1024, h: 1024, cell_m: 2.0, seed: 2026 }
+        Self {
+            w: 1024,
+            h: 1024,
+            cell_m: 2.0,
+            seed: 2026,
+        }
     }
 }
 
@@ -100,7 +107,9 @@ pub fn generate(spec: &SynthSpec) -> World {
             let cy = hash2(k, 2, seed) * hm;
             let r = 25.0 + hash2(k, 3, seed) * 70.0;
             let depth = 0.25 * r;
-            let far = |p: (f32, f32), m: f32| ((cx - p.0).powi(2) + (cy - p.1).powi(2)).sqrt() > r * 1.6 + m;
+            let far = |p: (f32, f32), m: f32| {
+                ((cx - p.0).powi(2) + (cy - p.1).powi(2)).sqrt() > r * 1.6 + m
+            };
             let ok = far(base, 60.0)
                 && far(box_c, box_r)
                 && far((gentle_gap_x, scarp_y0), 120.0)
@@ -119,7 +128,8 @@ pub fn generate(spec: &SynthSpec) -> World {
 
             // 2) 陡崖：寬度隨 x 改變，缺口處變寬（坡度變緩）
             let ys = scarp_y0 + 60.0 * (x / 310.0).sin();
-            let width = 6.0 + 230.0 * gauss(x - gentle_gap_x, 55.0) + 100.0 * gauss(x - steep_gap_x, 14.0);
+            let width =
+                6.0 + 230.0 * gauss(x - gentle_gap_x, 55.0) + 100.0 * gauss(x - steep_gap_x, 14.0);
             z += 25.0 * smoothstep(-0.5 * width, 0.5 * width, y - ys);
 
             // 3) 撞擊坑：碗狀 + 坑緣
@@ -193,19 +203,80 @@ pub fn generate(spec: &SynthSpec) -> World {
         },
     ];
 
+    // 信標：基地與探測車是 LoRa（長距離），沿安全路線與 boxwork 附近放可攜式 UWB。
+    let b = |id: &str, kind: BeaconKind, x: f32, y: f32, label: &str| Beacon {
+        id: id.into(),
+        kind,
+        x,
+        y,
+        label: label.into(),
+    };
+    let scarp_at = |x: f32| scarp_y0 + 60.0 * (x / 310.0).sin();
+    let beacons = vec![
+        b(
+            "hab",
+            BeaconKind::Lora,
+            base.0 + 8.0,
+            base.1,
+            "Habitat mast",
+        ),
+        b(
+            "rover",
+            BeaconKind::Lora,
+            base.0 + 212.0,
+            base.1 + 212.0,
+            "Rover (parked)",
+        ),
+        b(
+            "uwb1",
+            BeaconKind::Uwb,
+            gentle_gap_x + 20.0,
+            scarp_at(gentle_gap_x + 20.0) + 40.0,
+            "UWB scarp gap",
+        ),
+        b(
+            "uwb2",
+            BeaconKind::Uwb,
+            0.5 * (gentle_gap_x + box_c.0),
+            0.5 * (scarp_y0 + box_c.1) + 40.0,
+            "UWB mid-traverse",
+        ),
+        b(
+            "uwb3",
+            BeaconKind::Uwb,
+            box_c.0 - 0.6 * box_r - 30.0,
+            box_c.1 - 0.55 * box_r - 20.0,
+            "UWB boxwork margin",
+        ),
+        b(
+            "uwb4",
+            BeaconKind::Uwb,
+            box_c.0 - 40.0,
+            box_c.1 - 30.0,
+            "UWB boxwork center",
+        ),
+    ];
+
     World {
         name: "Synthetic Mount Sharp boxwork site".into(),
         source: format!("synthetic (seed {seed})"),
         dem,
         base,
         targets,
+        beacons,
     }
 }
 
 fn stamp_boulder(dem: &mut Grid<f32>, bx: f32, by: f32, rad: f32, ht: f32) {
     let c = dem.cell_m;
-    let (i0, i1) = (((bx - rad) / c).floor() as isize, ((bx + rad) / c).ceil() as isize);
-    let (j0, j1) = (((by - rad) / c).floor() as isize, ((by + rad) / c).ceil() as isize);
+    let (i0, i1) = (
+        ((bx - rad) / c).floor() as isize,
+        ((bx + rad) / c).ceil() as isize,
+    );
+    let (j0, j1) = (
+        ((by - rad) / c).floor() as isize,
+        ((by + rad) / c).ceil() as isize,
+    );
     for j in j0..=j1 {
         for i in i0..=i1 {
             if !dem.in_bounds(i, j) {
@@ -227,7 +298,12 @@ mod tests {
     use crate::terrain::slope_deg;
 
     fn small() -> World {
-        generate(&SynthSpec { w: 256, h: 256, cell_m: 8.0, seed: 7 })
+        generate(&SynthSpec {
+            w: 256,
+            h: 256,
+            cell_m: 8.0,
+            seed: 7,
+        })
     }
 
     #[test]

@@ -5,7 +5,7 @@
 //! `÷ (1 + rough/rough_scale)`。平地 = v0；25° 約為 v0 的 20%。
 
 use crate::grid::Grid;
-use rayon::prelude::*;
+use crate::par;
 
 /// 步行速度（m/s）。
 #[inline]
@@ -14,11 +14,20 @@ pub fn walk_speed(v0: f32, slope_deg: f32, rough_m: f32, rough_scale_m: f32) -> 
 }
 
 /// 每公尺所需秒數；危險格為 ∞。拿來跑 Dijkstra／A* 就得到「時間」。
-pub fn seconds_per_m(slope: &Grid<f32>, rough: &Grid<f32>, hazard: &Grid<bool>, v0: f32, rough_scale_m: f32) -> Grid<f32> {
-    let data = (0..slope.data.len())
-        .into_par_iter()
-        .map(|k| if hazard.data[k] { f32::INFINITY } else { 1.0 / walk_speed(v0, slope.data[k], rough.data[k], rough_scale_m) })
-        .collect();
+pub fn seconds_per_m(
+    slope: &Grid<f32>,
+    rough: &Grid<f32>,
+    hazard: &Grid<bool>,
+    v0: f32,
+    rough_scale_m: f32,
+) -> Grid<f32> {
+    let data = par::map_range(slope.data.len(), |k| {
+        if hazard.data[k] {
+            f32::INFINITY
+        } else {
+            1.0 / walk_speed(v0, slope.data[k], rough.data[k], rough_scale_m)
+        }
+    });
     Grid::from_vec(slope.w, slope.h, slope.cell_m, data)
 }
 

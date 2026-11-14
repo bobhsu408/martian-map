@@ -14,12 +14,16 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let data_dir = PathBuf::from(std::env::var("MARS_DATA").unwrap_or_else(|_| "../data/processed".into()));
+    let data_dir =
+        PathBuf::from(std::env::var("MARS_DATA").unwrap_or_else(|_| "../data/processed".into()));
     let web_dir = PathBuf::from(std::env::var("MARS_WEB").unwrap_or_else(|_| "../web/dist".into()));
-    let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8080);
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8080);
 
     let t0 = std::time::Instant::now();
-    let st = Arc::new(state::AppState::load(&data_dir));
+    let st = Arc::new(state::load_engine(&data_dir));
     println!(
         "[mars-server] world: {} ({}), {}x{} @ {} m — prepared in {:.0} ms",
         st.world.name,

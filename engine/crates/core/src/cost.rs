@@ -13,8 +13,8 @@
 //! ```
 
 use crate::grid::Grid;
+use crate::par;
 use crate::world::World;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize, Serialize)]
@@ -42,6 +42,8 @@ pub struct CostWeights {
     pub sigma_m: f32,
     /// 科學獎勵權重（越大越願意靠近科學目標）
     pub w_sci: f32,
+    /// 信標覆蓋不足的懲罰權重（偏好定位可靠的區域）
+    pub w_comm: f32,
     /// 成本下限（必須 > 0，A* 的啟發函數靠它保證最佳解）
     pub min_cost: f32,
 }
@@ -53,9 +55,33 @@ impl CostWeights {
     /// - min_cost > 0：A* 的啟發函數 = 距離 × min_cost，才能保證最佳解。
     pub fn for_mode(mode: Mode) -> Self {
         match mode {
-            Mode::Safe => Self { w_slope: 4.0, w_rough: 2.0, w_buf: 6.0, sigma_m: 20.0, w_sci: 0.2, min_cost: 0.1 },
-            Mode::Balanced => Self { w_slope: 2.5, w_rough: 1.2, w_buf: 4.5, sigma_m: 16.0, w_sci: 0.5, min_cost: 0.1 },
-            Mode::Science => Self { w_slope: 1.2, w_rough: 0.4, w_buf: 1.2, sigma_m: 8.0, w_sci: 0.9, min_cost: 0.1 },
+            Mode::Safe => Self {
+                w_slope: 4.0,
+                w_rough: 2.0,
+                w_buf: 6.0,
+                sigma_m: 20.0,
+                w_sci: 0.2,
+                w_comm: 1.0,
+                min_cost: 0.1,
+            },
+            Mode::Balanced => Self {
+                w_slope: 2.5,
+                w_rough: 1.2,
+                w_buf: 4.5,
+                sigma_m: 16.0,
+                w_sci: 0.5,
+                w_comm: 0.5,
+                min_cost: 0.1,
+            },
+            Mode::Science => Self {
+                w_slope: 1.2,
+                w_rough: 0.4,
+                w_buf: 1.2,
+                sigma_m: 8.0,
+                w_sci: 0.9,
+                w_comm: 0.2,
+                min_cost: 0.1,
+            },
         }
     }
 }
@@ -73,7 +99,10 @@ impl Default for HazardThresholds {
     /// 25°：Apollo 登月車的設計爬坡上限，作為穿太空衣步行的硬上限；
     /// 0.3 m：合成地形實測，岩塊區 p99 ≈ 0.5、boxwork 最大 ≈ 0.21 → 岩塊被擋、boxwork 可通行。
     fn default() -> Self {
-        Self { slope_max_deg: 25.0, rough_max_m: 0.3 }
+        Self {
+            slope_max_deg: 25.0,
+            rough_max_m: 0.3,
+        }
     }
 }
 
@@ -82,12 +111,11 @@ pub fn hazard_mask(slope: &Grid<f32>, rough: &Grid<f32>, th: HazardThresholds) -
     let data: Vec<bool> = slope
         .data
         .iter()
-        .zip(&rough.data)          // 同時走坡度和粗糙度兩張圖
-        .map(|(&s, &r)| s > th.slope_max_deg || r > th.rough_max_m)       // s = 這格的坡度，r = 這格的粗糙度
+        .zip(&rough.data) // 同時走坡度和粗糙度兩張圖
+        .map(|(&s, &r)| s > th.slope_max_deg || r > th.rough_max_m) // s = 這格的坡度，r = 這格的粗糙度
         .collect();
     Grid::from_vec(slope.w, slope.h, slope.cell_m, data)
 }
-
 
 /// 科學價值場（0–1）：每個目標貢獻 `science · exp(-d²/(2r²))`，重疊時取最大值
 /// （取 max 而非相加，避免多個目標疊加後把成本扣到過低）。只處理目標周圍 3r 內的格子。
@@ -124,6 +152,8 @@ pub struct CostInputs<'a> {
     pub clearance: &'a Grid<f32>,
     /// 科學價值 0–1
     pub science: &'a Grid<f32>,
+    /// 覆蓋不足程度 0–1（0 = 至少 3 個可見信標，1 = 沒有信標）
+    pub comm: &'a Grid<f32>,
     pub slope_max_deg: f32,
     /// 粗糙度正規化用的尺度（公尺）
     pub rough_scale_m: f32,
@@ -132,19 +162,18 @@ pub struct CostInputs<'a> {
 /// 依公式計算每格成本；hazard 格為 `f32::INFINITY`。
 pub fn cost_map(inp: &CostInputs, w: &CostWeights) -> Grid<f32> {
     let n = inp.slope.data.len();
-    let data: Vec<f32> = (0..n)
-        .into_par_iter()
-        .map(|k| {
-            if inp.hazard.data[k] {
-                return f32::INFINITY;
-            }
-            let s = inp.slope.data[k] / inp.slope_max_deg;
-            let r = inp.rough.data[k] / inp.rough_scale_m;
-            let buf = (-inp.clearance.data[k] / w.sigma_m).exp();
-            let c = 1.0 + w.w_slope * s * s + w.w_rough * r + w.w_buf * buf - w.w_sci * inp.science.data[k];
-            c.max(w.min_cost)
-        })
-        .collect();
+    let data: Vec<f32> = par::map_range(n, |k| {
+        if inp.hazard.data[k] {
+            return f32::INFINITY;
+        }
+        let s = inp.slope.data[k] / inp.slope_max_deg;
+        let r = inp.rough.data[k] / inp.rough_scale_m;
+        let buf = (-inp.clearance.data[k] / w.sigma_m).exp();
+        let c = 1.0 + w.w_slope * s * s + w.w_rough * r + w.w_buf * buf
+            - w.w_sci * inp.science.data[k]
+            + w.w_comm * inp.comm.data[k];
+        c.max(w.min_cost)
+    });
     Grid::from_vec(inp.slope.w, inp.slope.h, inp.slope.cell_m, data)
 }
 
@@ -164,7 +193,14 @@ mod tests {
     #[test]
     fn steep_cell_is_hazard() {
         let (slope, rough) = tiny();
-        let hz = hazard_mask(&slope, &rough, HazardThresholds { slope_max_deg: 25.0, rough_max_m: 1.0 });
+        let hz = hazard_mask(
+            &slope,
+            &rough,
+            HazardThresholds {
+                slope_max_deg: 25.0,
+                rough_max_m: 1.0,
+            },
+        );
         assert!(hz.get(10, 10));
         assert!(!hz.get(0, 0));
     }
@@ -172,7 +208,14 @@ mod tests {
     #[test]
     fn hazard_is_infinite_and_cost_decreases_with_distance() {
         let (slope, rough) = tiny();
-        let hz = hazard_mask(&slope, &rough, HazardThresholds { slope_max_deg: 25.0, rough_max_m: 1.0 });
+        let hz = hazard_mask(
+            &slope,
+            &rough,
+            HazardThresholds {
+                slope_max_deg: 25.0,
+                rough_max_m: 1.0,
+            },
+        );
         let clr = distance_to(&hz);
         let sci = Grid::new(21, 21, 1.0, 0.0f32);
         let inp = CostInputs {
@@ -181,6 +224,7 @@ mod tests {
             hazard: &hz,
             clearance: &clr,
             science: &sci,
+            comm: &sci,
             slope_max_deg: 25.0,
             rough_scale_m: 1.0,
         };
@@ -188,15 +232,28 @@ mod tests {
         assert!(c.get(10, 10).is_infinite());
         // 沿著一列往外走，成本應該單調不增（離危險越遠越便宜）
         for i in 11..20 {
-            assert!(c.get(i + 1, 10) <= c.get(i, 10), "cost should not increase away from hazard at i={i}");
+            assert!(
+                c.get(i + 1, 10) <= c.get(i, 10),
+                "cost should not increase away from hazard at i={i}"
+            );
         }
     }
 
     #[test]
     fn modes_are_ordered_sensibly() {
-        let (s, b, sc) = (CostWeights::for_mode(Mode::Safe), CostWeights::for_mode(Mode::Balanced), CostWeights::for_mode(Mode::Science));
-        assert!(s.w_buf >= b.w_buf && b.w_buf >= sc.w_buf, "safe 應該最重視緩衝");
-        assert!(sc.w_sci >= b.w_sci && b.w_sci >= s.w_sci, "science 應該最重視科學");
+        let (s, b, sc) = (
+            CostWeights::for_mode(Mode::Safe),
+            CostWeights::for_mode(Mode::Balanced),
+            CostWeights::for_mode(Mode::Science),
+        );
+        assert!(
+            s.w_buf >= b.w_buf && b.w_buf >= sc.w_buf,
+            "safe 應該最重視緩衝"
+        );
+        assert!(
+            sc.w_sci >= b.w_sci && b.w_sci >= s.w_sci,
+            "science 應該最重視科學"
+        );
         for w in [s, b, sc] {
             assert!(w.min_cost > 0.0, "min_cost 必須 > 0");
             assert!(w.sigma_m > 0.0);
@@ -205,7 +262,12 @@ mod tests {
 
     #[test]
     fn science_field_peaks_at_target() {
-        let w = crate::synth::generate(&crate::synth::SynthSpec { w: 128, h: 128, cell_m: 8.0, seed: 3 });
+        let w = crate::synth::generate(&crate::synth::SynthSpec {
+            w: 128,
+            h: 128,
+            cell_m: 8.0,
+            seed: 3,
+        });
         let f = science_field(&w, 60.0);
         let t = &w.targets[0];
         let (i, j) = w.dem.to_cell(t.x, t.y).unwrap();

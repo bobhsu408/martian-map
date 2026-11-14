@@ -3,13 +3,17 @@
 //! 路線規劃（含統計與說明）、三模式比較、不歸點（PNR）安全區、EVA 中的重規劃。
 
 use crate::astar::{astar, dijkstra_field};
-use crate::cost::{cost_map, hazard_mask, science_field, CostInputs, CostWeights, HazardThresholds, Mode};
+use crate::cost::{
+    CostInputs, CostWeights, HazardThresholds, Mode, cost_map, hazard_mask, science_field,
+};
 use crate::edt::distance_to;
 use crate::eva::{dose_msv, seconds_per_m};
 use crate::grid::Grid;
+use crate::localize::coverage;
+use crate::nav::{RouteStatus, assess, cross_track, point_along};
 use crate::params::MissionParams;
 use crate::terrain::{roughness, slope_deg};
-use crate::world::{Target, World};
+use crate::world::{Beacon, Target, World};
 use serde::{Deserialize, Serialize};
 
 /// 粗糙度正規化尺度（公尺），與危險門檻一致
@@ -74,6 +78,34 @@ pub struct Planner {
     pub targets: Vec<Target>,
     pub params: MissionParams,
     pub thresholds: HazardThresholds,
+    pub beacons: Vec<Beacon>,
+    /// 每格可見信標數
+    pub coverage: Grid<f32>,
+}
+
+/// 導航狀態（給 HUD 用）：偏離路線距離、下一個導引點、狀態、回基地時間。
+#[derive(Debug, Clone, Serialize)]
+pub struct NavStatus {
+    pub xte_m: f32,
+    pub along_m: f32,
+    pub remaining_m: f32,
+    /// 沿路線前方 `lookahead` 公尺的導引點
+    pub next: [f32; 2],
+    /// 路線在太空人的哪一側：+1 左、−1 右（以路線前進方向看）
+    pub side: f32,
+    pub status: RouteStatus,
+    pub reason: &'static str,
+    /// 到最近危險區的距離（公尺）
+    pub clearance_m: f32,
+    /// 從此處走回基地的時間（分鐘；不含新回報的障礙）
+    pub t_return_min: f32,
+    /// 此處可見的信標數
+    pub coverage: f32,
+}
+
+/// 「覆蓋不足」懲罰：0 個可見信標 → 1，≥ 3 個 → 0。
+fn comm_penalty(cov: &Grid<f32>) -> Grid<f32> {
+    cov.map(|c| (1.0 - c.min(3.0) / 3.0).max(0.0))
 }
 
 fn mode_idx(m: Mode) -> usize {
@@ -88,14 +120,34 @@ impl Planner {
     pub fn new(world: &World, params: MissionParams) -> Self {
         let slope = slope_deg(&world.dem);
         let rough = roughness(&world.dem);
-        let thresholds = HazardThresholds { slope_max_deg: params.slope_max_deg, ..HazardThresholds::default() };
+        let thresholds = HazardThresholds {
+            slope_max_deg: params.slope_max_deg,
+            ..HazardThresholds::default()
+        };
         let hazard = hazard_mask(&slope, &rough, thresholds);
         let science = science_field(world, SCIENCE_RADIUS_M);
+        let cov = coverage(&world.dem, &world.beacons, &params.nav, 4);
         let base_idx = {
-            let (i, j) = world.dem.to_cell(world.base.0, world.base.1).expect("base outside map");
+            let (i, j) = world
+                .dem
+                .to_cell(world.base.0, world.base.1)
+                .expect("base outside map");
             world.dem.idx(i, j)
         };
-        Self::assemble(world.dem.clone(), slope, rough, hazard, science, world.base, base_idx, world.targets.clone(), params, thresholds)
+        Self::assemble(
+            world.dem.clone(),
+            slope,
+            rough,
+            hazard,
+            science,
+            world.base,
+            base_idx,
+            world.targets.clone(),
+            params,
+            thresholds,
+            world.beacons.clone(),
+            cov,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -110,22 +162,49 @@ impl Planner {
         targets: Vec<Target>,
         params: MissionParams,
         thresholds: HazardThresholds,
+        beacons: Vec<Beacon>,
+        coverage: Grid<f32>,
     ) -> Self {
         hazard.data[base_idx] = false; // 基地本身一定可站
         let clearance = distance_to(&hazard);
+        let comm = comm_penalty(&coverage);
         let inp = CostInputs {
             slope: &slope,
             rough: &rough,
             hazard: &hazard,
             clearance: &clearance,
             science: &science,
+            comm: &comm,
             slope_max_deg: thresholds.slope_max_deg,
             rough_scale_m: ROUGH_SCALE_M,
         };
         let costs = Mode::ALL.map(|m| cost_map(&inp, &CostWeights::for_mode(m)));
-        let spm = seconds_per_m(&slope, &rough, &hazard, params.walk_speed_mps, ROUGH_SCALE_M);
+        let spm = seconds_per_m(
+            &slope,
+            &rough,
+            &hazard,
+            params.walk_speed_mps,
+            ROUGH_SCALE_M,
+        );
         let t_base_min = dijkstra_field(&spm, base_idx).map(|s| s / 60.0);
-        Self { dem, slope, rough, hazard, clearance, science, spm, costs, t_base_min, base, base_idx, targets, params, thresholds }
+        Self {
+            dem,
+            slope,
+            rough,
+            hazard,
+            clearance,
+            science,
+            spm,
+            costs,
+            t_base_min,
+            base,
+            base_idx,
+            targets,
+            params,
+            thresholds,
+            beacons,
+            coverage,
+        }
     }
 
     /// 加入回報的障礙（圓盤）後重建規劃器。
@@ -145,7 +224,46 @@ impl Planner {
             self.targets.clone(),
             self.params.clone(),
             self.thresholds,
+            self.beacons.clone(),
+            self.coverage.clone(),
         )
+    }
+
+    /// HUD 用的導航狀態：估計位置 + 不確定度 + 目前路線。
+    pub fn track(
+        &self,
+        pos: (f32, f32),
+        sigma_m: f32,
+        path: &[[f32; 3]],
+        lookahead_m: f32,
+    ) -> Result<NavStatus, PlanError> {
+        if path.len() < 2 {
+            return Err(PlanError::NoPath);
+        }
+        let (i, j) = self
+            .dem
+            .to_cell(pos.0, pos.1)
+            .ok_or(PlanError::OutOfBounds)?;
+        let k = self.dem.idx(i, j);
+        let t = cross_track(path, pos);
+        let clearance = if self.hazard.data[k] {
+            0.0
+        } else {
+            self.clearance.data[k]
+        };
+        let (status, reason) = assess(t.xte_m, sigma_m, clearance, &self.params.nav);
+        Ok(NavStatus {
+            xte_m: t.xte_m,
+            along_m: t.along_m,
+            remaining_m: (t.total_m - t.along_m).max(0.0),
+            next: point_along(path, t.along_m + lookahead_m),
+            side: t.side,
+            status,
+            reason,
+            clearance_m: clearance.min(1e5),
+            t_return_min: self.t_base_min.data[k],
+            coverage: self.coverage.data[k],
+        })
     }
 
     pub fn cost(&self, m: Mode) -> &Grid<f32> {
@@ -177,7 +295,12 @@ impl Planner {
         best.map(|(_, n)| n).ok_or(PlanError::Blocked)
     }
 
-    pub fn route(&self, start: (f32, f32), goal: (f32, f32), mode: Mode) -> Result<Route, PlanError> {
+    pub fn route(
+        &self,
+        start: (f32, f32),
+        goal: (f32, f32),
+        mode: Mode,
+    ) -> Result<Route, PlanError> {
         let s = self.locate(start)?;
         let g = self.locate(goal)?;
         let min_cost = CostWeights::for_mode(mode).min_cost;
@@ -187,9 +310,14 @@ impl Planner {
 
     /// 三種模式各規劃一次（平行）。
     pub fn compare(&self, start: (f32, f32), goal: (f32, f32)) -> [Result<Route, PlanError>; 3] {
-        let (a, (b, c)) = rayon::join(
+        let (a, (b, c)) = crate::par::join(
             || self.route(start, goal, Mode::Safe),
-            || rayon::join(|| self.route(start, goal, Mode::Balanced), || self.route(start, goal, Mode::Science)),
+            || {
+                crate::par::join(
+                    || self.route(start, goal, Mode::Balanced),
+                    || self.route(start, goal, Mode::Science),
+                )
+            },
         );
         [a, b, c]
     }
@@ -198,28 +326,69 @@ impl Planner {
     pub fn pnr_mask(&self, pos: (f32, f32), o2_min: f32) -> Result<Grid<bool>, PlanError> {
         let budget = o2_min - self.params.o2_reserve_min;
         let p = self.locate(pos)?;
-        let t_pos = if p == self.base_idx { self.t_base_min.clone() } else { dijkstra_field(&self.spm, p).map(|s| s / 60.0) };
-        let data = t_pos.data.iter().zip(&self.t_base_min.data).map(|(a, b)| a + b <= budget).collect();
-        Ok(Grid::from_vec(self.dem.w, self.dem.h, self.dem.cell_m, data))
+        let t_pos = if p == self.base_idx {
+            self.t_base_min.clone()
+        } else {
+            dijkstra_field(&self.spm, p).map(|s| s / 60.0)
+        };
+        let data = t_pos
+            .data
+            .iter()
+            .zip(&self.t_base_min.data)
+            .map(|(a, b)| a + b <= budget)
+            .collect();
+        Ok(Grid::from_vec(
+            self.dem.w,
+            self.dem.h,
+            self.dem.cell_m,
+            data,
+        ))
     }
 
     /// EVA 中的重規劃。`self` 應已套用最新障礙（見 `with_obstacles`）。
-    pub fn replan(&self, pos: (f32, f32), goal: (f32, f32), mode: Mode, had_obstacles: bool, o2_min: f32) -> Result<Replan, PlanError> {
+    pub fn replan(
+        &self,
+        pos: (f32, f32),
+        goal: (f32, f32),
+        mode: Mode,
+        had_obstacles: bool,
+        o2_min: f32,
+    ) -> Result<Replan, PlanError> {
         let budget = o2_min - self.params.o2_reserve_min;
         let to_base = || self.route(pos, self.base, Mode::Safe).ok();
         match self.route(pos, goal, mode) {
-            Err(PlanError::NoPath) | Err(PlanError::Blocked) => {
-                Ok(Replan { route: None, must_return: true, return_route: to_base(), reason: "no_path", round_trip_min: None })
-            }
+            Err(PlanError::NoPath) | Err(PlanError::Blocked) => Ok(Replan {
+                route: None,
+                must_return: true,
+                return_route: to_base(),
+                reason: "no_path",
+                round_trip_min: None,
+            }),
             Err(e) => Err(e),
             Ok(r) => {
                 let g = self.locate(goal)?;
                 let round = r.eta_min + self.t_base_min.data[g];
                 if round > budget {
-                    Ok(Replan { route: None, must_return: true, return_route: to_base(), reason: "goal_beyond_pnr", round_trip_min: Some(round) })
+                    Ok(Replan {
+                        route: None,
+                        must_return: true,
+                        return_route: to_base(),
+                        reason: "goal_beyond_pnr",
+                        round_trip_min: Some(round),
+                    })
                 } else {
-                    let reason = if had_obstacles { "obstacle_rerouted" } else { "ok" };
-                    Ok(Replan { route: Some(r), must_return: false, return_route: None, reason, round_trip_min: Some(round) })
+                    let reason = if had_obstacles {
+                        "obstacle_rerouted"
+                    } else {
+                        "ok"
+                    };
+                    Ok(Replan {
+                        route: Some(r),
+                        must_return: false,
+                        return_route: None,
+                        reason,
+                        round_trip_min: Some(round),
+                    })
                 }
             }
         }
@@ -258,12 +427,17 @@ impl Planner {
         let straight = ((s.0 - g.0).powi(2) + (s.1 - g.1).powi(2)).sqrt().max(1e-3);
         let mut notes = vec![];
         let (mx, my) = xy(max_slope_at);
-        notes.push(format!("Steepest section {max_slope:.0}° near ({mx:.0}, {my:.0}) m"));
+        notes.push(format!(
+            "Steepest section {max_slope:.0}° near ({mx:.0}, {my:.0}) m"
+        ));
         if min_clear < 1e5 {
             notes.push(format!("Closest approach to a hazard: {min_clear:.0} m"));
         }
         if length / straight > 1.15 {
-            notes.push(format!("Detour {:.0}% longer than the straight line to avoid hazards", (length / straight - 1.0) * 100.0));
+            notes.push(format!(
+                "Detour {:.0}% longer than the straight line to avoid hazards",
+                (length / straight - 1.0) * 100.0
+            ));
         }
         for t in &self.targets {
             let dist = cells.iter().map(|&k| {
@@ -303,8 +477,14 @@ impl Planner {
 
 fn stamp_disk(mask: &mut Grid<bool>, o: &Obstacle) {
     let c = mask.cell_m;
-    let (i0, i1) = (((o.x - o.r) / c).floor() as isize, ((o.x + o.r) / c).ceil() as isize);
-    let (j0, j1) = (((o.y - o.r) / c).floor() as isize, ((o.y + o.r) / c).ceil() as isize);
+    let (i0, i1) = (
+        ((o.x - o.r) / c).floor() as isize,
+        ((o.x + o.r) / c).ceil() as isize,
+    );
+    let (j0, j1) = (
+        ((o.y - o.r) / c).floor() as isize,
+        ((o.y + o.r) / c).ceil() as isize,
+    );
     for j in j0..=j1 {
         for i in i0..=i1 {
             if mask.in_bounds(i, j) {
@@ -352,13 +532,16 @@ fn simplify(cells: &[usize], d: &Grid<f32>) -> Vec<[f32; 3]> {
             stack.push((bi, b));
         }
     }
-    pts.into_iter().zip(keep).filter_map(|(p, k)| k.then_some(p)).collect()
+    pts.into_iter()
+        .zip(keep)
+        .filter_map(|(p, k)| k.then_some(p))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::synth::{generate, SynthSpec};
+    use crate::synth::{SynthSpec, generate};
 
     use std::sync::OnceLock;
 
@@ -384,7 +567,10 @@ mod tests {
             assert!((0.0..=1.0).contains(&r.risk));
             assert!(!r.notes.is_empty());
             let last = r.path.last().unwrap();
-            assert!(((last[0] - goal.0).powi(2) + (last[1] - goal.1).powi(2)).sqrt() < SNAP_RADIUS_M + 4.0);
+            assert!(
+                ((last[0] - goal.0).powi(2) + (last[1] - goal.1).powi(2)).sqrt()
+                    < SNAP_RADIUS_M + 4.0
+            );
         }
     }
 
@@ -394,7 +580,12 @@ mod tests {
         let goal = (w.targets[0].x, w.targets[0].y);
         let [s, _, sc] = p.compare(w.base, goal);
         let (s, sc) = (s.unwrap(), sc.unwrap());
-        assert!(s.min_clearance_m + 1e-3 >= sc.min_clearance_m, "safe {} < science {}", s.min_clearance_m, sc.min_clearance_m);
+        assert!(
+            s.min_clearance_m + 1e-3 >= sc.min_clearance_m,
+            "safe {} < science {}",
+            s.min_clearance_m,
+            sc.min_clearance_m
+        );
         assert!(s.risk <= sc.risk + 1e-3);
     }
 
@@ -404,20 +595,36 @@ mod tests {
         let goal = (w.targets[0].x, w.targets[0].y);
         let r0 = p.route(w.base, goal, Mode::Balanced).unwrap();
         let mid = r0.path[r0.path.len() / 2];
-        let obs = [Obstacle { x: mid[0], y: mid[1], r: 40.0 }];
+        let obs = [Obstacle {
+            x: mid[0],
+            y: mid[1],
+            r: 40.0,
+        }];
         let p2 = p.with_obstacles(&obs);
         let r1 = p2.route(w.base, goal, Mode::Balanced).unwrap();
         for q in &r1.path {
-            assert!(((q[0] - mid[0]).powi(2) + (q[1] - mid[1]).powi(2)).sqrt() > 40.0 - 4.0, "path enters obstacle");
+            assert!(
+                ((q[0] - mid[0]).powi(2) + (q[1] - mid[1]).powi(2)).sqrt() > 40.0 - 4.0,
+                "path enters obstacle"
+            );
         }
-        let rp = p2.replan(w.base, goal, Mode::Balanced, true, 480.0).unwrap();
+        let rp = p2
+            .replan(w.base, goal, Mode::Balanced, true, 480.0)
+            .unwrap();
         assert_eq!(rp.reason, "obstacle_rerouted");
     }
 
     #[test]
     fn pnr_shrinks_with_less_o2_and_triggers_return() {
         let (w, p) = planner();
-        let count = |o2: f32| p.pnr_mask(w.base, o2).unwrap().data.iter().filter(|&&b| b).count();
+        let count = |o2: f32| {
+            p.pnr_mask(w.base, o2)
+                .unwrap()
+                .data
+                .iter()
+                .filter(|&&b| b)
+                .count()
+        };
         let (big, small) = (count(480.0), count(120.0));
         assert!(small < big, "{small} !< {big}");
         assert!(small > 0);
@@ -425,5 +632,46 @@ mod tests {
         let rp = p.replan(w.base, goal, Mode::Safe, false, 35.0).unwrap();
         assert!(rp.must_return);
         assert_eq!(rp.reason, "goal_beyond_pnr");
+    }
+
+    #[test]
+    fn drift_detection_on_route_vs_offset() {
+        let (w, p) = planner();
+        let goal = (w.targets[0].x, w.targets[0].y);
+        let r = p.route(w.base, goal, Mode::Safe).unwrap();
+        // 沿路線取幾個點：不應警告
+        let total = crate::nav::cross_track(&r.path, w.base).total_m;
+        for f in [0.2, 0.5, 0.8] {
+            let q = crate::nav::point_along(&r.path, total * f);
+            let s = p.track((q[0], q[1]), 1.0, &r.path, 25.0).unwrap();
+            assert_eq!(s.status, RouteStatus::OnRoute, "at {f}: {s:?}");
+        }
+        // 在路線中段往側邊偏 40 m：要觸發重規劃
+        let a = crate::nav::point_along(&r.path, total * 0.5);
+        let b = crate::nav::point_along(&r.path, total * 0.5 + 5.0);
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let n = (dx * dx + dy * dy).sqrt();
+        let off = (a[0] - dy / n * 40.0, a[1] + dx / n * 40.0);
+        let s = p.track(off, 1.0, &r.path, 25.0).unwrap();
+        assert!(s.xte_m > 30.0, "{s:?}");
+        assert_eq!(s.status, RouteStatus::Replan);
+        // 從估計位置重規劃能回到目標
+        assert!(
+            p.replan(off, goal, Mode::Safe, false, 480.0)
+                .unwrap()
+                .route
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn coverage_layer_has_beacons() {
+        let (w, p) = planner();
+        let (i, j) = w.dem.to_cell(w.base.0, w.base.1).unwrap();
+        assert!(
+            p.coverage.get(i, j) >= 2.0,
+            "base should see habitat + rover LoRa"
+        );
+        assert_eq!(p.beacons.len(), w.beacons.len());
     }
 }

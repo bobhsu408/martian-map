@@ -4,8 +4,12 @@
 pub mod astar;
 pub mod cost;
 pub mod edt;
+pub mod engine;
 pub mod eva;
 pub mod grid;
+pub mod localize;
+pub mod nav;
+pub mod par;
 pub mod params;
 pub mod planner;
 pub mod synth;

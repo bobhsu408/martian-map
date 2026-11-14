@@ -2,21 +2,25 @@
 //! 由 DEM 推導地形屬性：坡度（Horn 法）與粗糙度（局部起伏）。
 
 use crate::grid::Grid;
-use rayon::prelude::*;
+use crate::par;
 
 /// 坡度（度）。使用 Horn (1981) 3×3 加權差分；邊緣以夾邊處理。
 pub fn slope_deg(dem: &Grid<f32>) -> Grid<f32> {
     let (w, h, c) = (dem.w, dem.h, dem.cell_m);
     let mut out = vec![0.0f32; w * h];
-    out.par_chunks_mut(w).enumerate().for_each(|(j, row)| {
+    par::for_each_row_mut(&mut out, w, |j, row| {
         let j = j as isize;
         for (i, o) in row.iter_mut().enumerate() {
             let i = i as isize;
             let z = |di: isize, dj: isize| dem.get_clamped(i + di, j + dj);
             // 東減西
-            let dzdx = ((z(1, 1) + 2.0 * z(1, 0) + z(1, -1)) - (z(-1, 1) + 2.0 * z(-1, 0) + z(-1, -1))) / (8.0 * c);
+            let dzdx = ((z(1, 1) + 2.0 * z(1, 0) + z(1, -1))
+                - (z(-1, 1) + 2.0 * z(-1, 0) + z(-1, -1)))
+                / (8.0 * c);
             // 北減南（j 由南向北遞增）
-            let dzdy = ((z(-1, 1) + 2.0 * z(0, 1) + z(1, 1)) - (z(-1, -1) + 2.0 * z(0, -1) + z(1, -1))) / (8.0 * c);
+            let dzdy = ((z(-1, 1) + 2.0 * z(0, 1) + z(1, 1))
+                - (z(-1, -1) + 2.0 * z(0, -1) + z(1, -1)))
+                / (8.0 * c);
             *o = (dzdx * dzdx + dzdy * dzdy).sqrt().atan().to_degrees();
         }
     });
@@ -27,7 +31,7 @@ pub fn slope_deg(dem: &Grid<f32>) -> Grid<f32> {
 fn mean3(g: &Grid<f32>) -> Grid<f32> {
     let w = g.w;
     let mut out = vec![0.0f32; g.w * g.h];
-    out.par_chunks_mut(w).enumerate().for_each(|(j, row)| {
+    par::for_each_row_mut(&mut out, w, |j, row| {
         let j = j as isize;
         for (i, o) in row.iter_mut().enumerate() {
             let i = i as isize;
@@ -47,7 +51,16 @@ fn mean3(g: &Grid<f32>) -> Grid<f32> {
 /// 平面（任意坡度）的值為 0，所以它量的是「坑坑疤疤」而不是斜度；岩塊、礦脈稜線會很高。
 pub fn roughness(dem: &Grid<f32>) -> Grid<f32> {
     let m = mean3(dem);
-    let tpi = Grid::from_vec(dem.w, dem.h, dem.cell_m, dem.data.iter().zip(&m.data).map(|(z, mu)| (z - mu).abs()).collect());
+    let tpi = Grid::from_vec(
+        dem.w,
+        dem.h,
+        dem.cell_m,
+        dem.data
+            .iter()
+            .zip(&m.data)
+            .map(|(z, mu)| (z - mu).abs())
+            .collect(),
+    );
     mean3(&tpi)
 }
 
@@ -79,7 +92,11 @@ mod tests {
         let expect = 0.5f32.atan().to_degrees();
         for j in 1..19 {
             for i in 1..19 {
-                assert!((s.get(i, j) - expect).abs() < 0.1, "({i},{j}) = {}", s.get(i, j));
+                assert!(
+                    (s.get(i, j) - expect).abs() < 0.1,
+                    "({i},{j}) = {}",
+                    s.get(i, j)
+                );
             }
         }
     }

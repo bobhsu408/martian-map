@@ -3,7 +3,7 @@
 //! 給定布林遮罩（true = 危險格），回傳每格到最近危險格的距離（公尺）。
 
 use crate::grid::Grid;
-use rayon::prelude::*;
+use crate::par;
 
 /// 用 f64 且 INF 不要太大，避免吃掉 q² 的精度（最大真實平方距離約 1e7）。
 const INF: f64 = 1e12;
@@ -20,7 +20,8 @@ fn dt1d(f: &[f64], d: &mut [f64], v: &mut [usize], z: &mut [f64]) {
     for q in 1..n {
         loop {
             let p = v[k];
-            let s = ((f[q] + (q * q) as f64) - (f[p] + (p * p) as f64)) / (2.0 * q as f64 - 2.0 * p as f64);
+            let s = ((f[q] + (q * q) as f64) - (f[p] + (p * p) as f64))
+                / (2.0 * q as f64 - 2.0 * p as f64);
             if s <= z[k] && k > 0 {
                 k -= 1;
             } else if s <= z[k] {
@@ -54,19 +55,20 @@ pub fn distance_to(mask: &Grid<bool>) -> Grid<f32> {
     if !mask.data.iter().any(|&b| b) {
         return Grid::new(w, h, mask.cell_m, FAR_M);
     }
-    let mut g: Vec<f64> = mask.data.iter().map(|&b| if b { 0.0 } else { INF }).collect();
+    let mut g: Vec<f64> = mask
+        .data
+        .iter()
+        .map(|&b| if b { 0.0 } else { INF })
+        .collect();
 
     // 第一趟：沿欄（每一個 i，跑過所有 j）
-    let cols: Vec<Vec<f64>> = (0..w)
-        .into_par_iter()
-        .map(|i| {
-            let f: Vec<f64> = (0..h).map(|j| g[j * w + i]).collect();
-            let mut d = vec![0.0; h];
-            let (mut v, mut z) = (vec![0usize; h], vec![0.0f64; h + 1]);
-            dt1d(&f, &mut d, &mut v, &mut z);
-            d
-        })
-        .collect();
+    let cols: Vec<Vec<f64>> = par::map_range(w, |i| {
+        let f: Vec<f64> = (0..h).map(|j| g[j * w + i]).collect();
+        let mut d = vec![0.0; h];
+        let (mut v, mut z) = (vec![0usize; h], vec![0.0f64; h + 1]);
+        dt1d(&f, &mut d, &mut v, &mut z);
+        d
+    });
     for (i, col) in cols.iter().enumerate() {
         for (j, &val) in col.iter().enumerate() {
             g[j * w + i] = val;
@@ -75,12 +77,15 @@ pub fn distance_to(mask: &Grid<bool>) -> Grid<f32> {
 
     // 第二趟：沿列
     let cell = mask.cell_m as f64;
-    g.par_chunks_mut(w).for_each(|row| {
+    par::for_each_row_mut(&mut g, w, |_, row| {
         let f = row.to_vec();
         let (mut v, mut z) = (vec![0usize; w], vec![0.0f64; w + 1]);
         dt1d(&f, row, &mut v, &mut z);
     });
-    let out = g.into_iter().map(|x| ((x.sqrt() * cell) as f32).min(FAR_M)).collect();
+    let out = g
+        .into_iter()
+        .map(|x| ((x.sqrt() * cell) as f32).min(FAR_M))
+        .collect();
     Grid::from_vec(w, h, mask.cell_m, out)
 }
 
@@ -90,14 +95,19 @@ mod tests {
     use proptest::prelude::*;
 
     fn brute(mask: &Grid<bool>) -> Grid<f32> {
-        let pts: Vec<(usize, usize)> =
-            (0..mask.h).flat_map(|j| (0..mask.w).map(move |i| (i, j))).filter(|&(i, j)| mask.get(i, j)).collect();
+        let pts: Vec<(usize, usize)> = (0..mask.h)
+            .flat_map(|j| (0..mask.w).map(move |i| (i, j)))
+            .filter(|&(i, j)| mask.get(i, j))
+            .collect();
         let mut out = Grid::new(mask.w, mask.h, mask.cell_m, FAR_M);
         for j in 0..mask.h {
             for i in 0..mask.w {
                 let d = pts
                     .iter()
-                    .map(|&(a, b)| (((a as f32 - i as f32).powi(2) + (b as f32 - j as f32).powi(2)).sqrt()) * mask.cell_m)
+                    .map(|&(a, b)| {
+                        (((a as f32 - i as f32).powi(2) + (b as f32 - j as f32).powi(2)).sqrt())
+                            * mask.cell_m
+                    })
                     .fold(FAR_M, f32::min);
                 out.set(i, j, d);
             }

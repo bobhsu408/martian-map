@@ -18,7 +18,12 @@ pub struct Grid<T> {
 
 impl<T: Copy> Grid<T> {
     pub fn new(w: usize, h: usize, cell_m: f32, fill: T) -> Self {
-        Self { w, h, cell_m, data: vec![fill; w * h] }
+        Self {
+            w,
+            h,
+            cell_m,
+            data: vec![fill; w * h],
+        }
     }
 
     pub fn from_vec(w: usize, h: usize, cell_m: f32, data: Vec<T>) -> Self {
@@ -56,7 +61,12 @@ impl<T: Copy> Grid<T> {
     }
 
     pub fn map<U: Copy>(&self, f: impl Fn(T) -> U) -> Grid<U> {
-        Grid { w: self.w, h: self.h, cell_m: self.cell_m, data: self.data.iter().map(|&v| f(v)).collect() }
+        Grid {
+            w: self.w,
+            h: self.h,
+            cell_m: self.cell_m,
+            data: self.data.iter().map(|&v| f(v)).collect(),
+        }
     }
 
     /// 以 `step` 倍率取樣（取每個區塊的左下角格），輸出 ceil(w/step) × ceil(h/step)。
@@ -70,7 +80,12 @@ impl<T: Copy> Grid<T> {
                 data.push(self.get(i * step, j * step));
             }
         }
-        Grid { w: w2, h: h2, cell_m: self.cell_m * step as f32, data }
+        Grid {
+            w: w2,
+            h: h2,
+            cell_m: self.cell_m * step as f32,
+            data,
+        }
     }
 
     /// 公尺座標 → 格子；超出範圍回傳 None。
@@ -86,7 +101,10 @@ impl<T: Copy> Grid<T> {
     /// 格子中心的公尺座標。
     #[inline]
     pub fn center(&self, i: usize, j: usize) -> (f32, f32) {
-        ((i as f32 + 0.5) * self.cell_m, (j as f32 + 0.5) * self.cell_m)
+        (
+            (i as f32 + 0.5) * self.cell_m,
+            (j as f32 + 0.5) * self.cell_m,
+        )
     }
 
     pub fn width_m(&self) -> f32 {
@@ -103,7 +121,9 @@ impl Grid<f32> {
         self.data
             .iter()
             .filter(|v| v.is_finite())
-            .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &v| (lo.min(v), hi.max(v)))
+            .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &v| {
+                (lo.min(v), hi.max(v))
+            })
     }
 
     /// little-endian f32 位元組（API 的二進位格式）。
@@ -118,8 +138,17 @@ impl Grid<f32> {
     /// 讀取前處理產生的 raw little-endian f32 檔。
     pub fn load_f32(path: &Path, w: usize, h: usize, cell_m: f32) -> anyhow::Result<Self> {
         let bytes = std::fs::read(path)?;
-        anyhow::ensure!(bytes.len() == w * h * 4, "{}: expected {} bytes, got {}", path.display(), w * h * 4, bytes.len());
-        let data = bytes.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+        anyhow::ensure!(
+            bytes.len() == w * h * 4,
+            "{}: expected {} bytes, got {}",
+            path.display(),
+            w * h * 4,
+            bytes.len()
+        );
+        let data = bytes
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
         Ok(Self::from_vec(w, h, cell_m, data))
     }
 }
@@ -157,7 +186,10 @@ mod tests {
     fn le_bytes_roundtrip() {
         let g = Grid::from_vec(2, 1, 1.0, vec![1.5f32, -4500.25]);
         let b = g.to_le_bytes();
-        let back: Vec<f32> = b.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect();
+        let back: Vec<f32> = b
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .collect();
         assert_eq!(back, g.data);
     }
 }

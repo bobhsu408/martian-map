@@ -15,11 +15,71 @@ pub struct MissionParams {
     pub o2_reserve_min: f32,
     /// 地表輻射劑量基準（mSv/天），Curiosity RAD 量級
     pub dose_msv_per_day: f32,
+    /// 定位與導航參數
+    pub nav: NavParams,
+}
+
+/// 一種無線電信標的特性。
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct BeaconSpec {
+    /// 測距雜訊標準差（公尺）
+    pub sigma_m: f32,
+    /// 最大可用距離（公尺）
+    pub max_range_m: f32,
+}
+
+/// 本地信標定位與偏離路線偵測的參數（全部可調）。
+#[derive(Clone, Debug, Serialize)]
+pub struct NavParams {
+    /// LoRa 型（長距離）
+    pub lora: BeaconSpec,
+    /// UWB 型（短距離、高精度）
+    pub uwb: BeaconSpec,
+    /// 信標天線離地高度（公尺）
+    pub beacon_antenna_m: f32,
+    /// 太空人天線離地高度（公尺）
+    pub suit_antenna_m: f32,
+    /// 航位推算時，每走 1 公尺不確定度增加的比例
+    pub dr_growth_per_m: f32,
+    /// 偏離路線警告門檻（公尺），同時須 > 2σ
+    pub offroute_warn_m: f32,
+    /// 偏離路線自動重規劃門檻（公尺）
+    pub offroute_replan_m: f32,
+    /// 偏離路線時，若離危險區小於此距離也立即重規劃（公尺）
+    pub hazard_buffer_m: f32,
+}
+
+impl Default for NavParams {
+    fn default() -> Self {
+        Self {
+            lora: BeaconSpec {
+                sigma_m: 2.0,
+                max_range_m: 1500.0,
+            },
+            uwb: BeaconSpec {
+                sigma_m: 0.15,
+                max_range_m: 150.0,
+            },
+            beacon_antenna_m: 2.0,
+            suit_antenna_m: 2.0,
+            dr_growth_per_m: 0.02,
+            offroute_warn_m: 15.0,
+            offroute_replan_m: 30.0,
+            hazard_buffer_m: 10.0,
+        }
+    }
 }
 
 impl Default for MissionParams {
     fn default() -> Self {
-        Self { slope_max_deg: 25.0, walk_speed_mps: 1.0, o2_capacity_min: 480.0, o2_reserve_min: 30.0, dose_msv_per_day: 0.7 }
+        Self {
+            slope_max_deg: 25.0,
+            walk_speed_mps: 1.0,
+            o2_capacity_min: 480.0,
+            o2_reserve_min: 30.0,
+            dose_msv_per_day: 0.7,
+            nav: NavParams::default(),
+        }
     }
 }
 
