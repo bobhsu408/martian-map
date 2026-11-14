@@ -69,7 +69,7 @@ function wasmBackend() {
   };
   return {
     kind: 'wasm',
-    ready: () => call('ready'),
+    ready: (...args) => call('ready', ...args),
     meta: async () => {
       const [engineMeta, rawMeta] = await Promise.all([call('meta'), sourceMeta()]);
       return { ...engineMeta, georeference: rawMeta.georeference, visual: rawMeta.visual, format: rawMeta.format, nodata: rawMeta.nodata };
@@ -106,7 +106,7 @@ function httpBackend(base = '') {
   };
   return {
     kind: 'server',
-    ready: async () => ({ build_ms: 0 }),
+    ready: async () => ({ build_ms: 0, source: 'server' }),
     meta: async () => {
       const [engineMeta, rawMeta] = await Promise.all([json('/api/meta'), sourceMeta()]);
       return { ...engineMeta, georeference: rawMeta.georeference, visual: rawMeta.visual, format: rawMeta.format, nodata: rawMeta.nodata };
@@ -127,7 +127,7 @@ function localBackend() {
   let demPromise;
   let derivedPromise;
   const loadMeta = async () => {
-    if (!metaPromise) metaPromise = fetch('/data/meta.json').then(async (res) => {
+    if (!metaPromise) metaPromise = fetch('data/meta.json').then(async (res) => {
       if (!res.ok) throw new Error(`cannot load local meta.json (${res.status})`);
       const raw = await res.json();
       const dem = await loadDem();
@@ -152,12 +152,26 @@ function localBackend() {
     return metaPromise;
   };
   const loadDem = async () => {
-    if (!demPromise) demPromise = fetch('/data/dem.f32').then(async (res) => {
+    if (!demPromise) demPromise = fetch('data/dem.f32').then(async (res) => {
       if (!res.ok) throw new Error(`cannot load local dem.f32 (${res.status})`);
       const buffer = await res.arrayBuffer();
       return new Float32Array(buffer);
     });
     return demPromise;
+  };
+  const loadGlobalMeta = async () => {
+    if (!globalMetaPromise) globalMetaPromise = fetch('data/global/meta.json').then(async (res) => {
+      if (!res.ok) throw new Error(`cannot load global MOLA meta.json (${res.status})`);
+      return res.json();
+    });
+    return globalMetaPromise;
+  };
+  const loadGlobalDem = async () => {
+    if (!globalDemPromise) globalDemPromise = fetch('data/global/dem.f32').then(async (res) => {
+      if (!res.ok) throw new Error(`cannot load global MOLA dem.f32 (${res.status})`);
+      return new Float32Array(await res.arrayBuffer());
+    });
+    return globalDemPromise;
   };
   const downsample = (data, width, height, step) => {
     const s = Math.max(1, step | 0);
@@ -202,6 +216,12 @@ function localBackend() {
     ready: async () => ({ build_ms: 0 }),
     meta: loadMeta,
     ...contextMapApi(),
+    globalMap: async () => ({
+      meta: await loadGlobalMeta(),
+      dem: await loadGlobalDem(),
+      textureUrl: 'data/global/satellite.jpg',
+      reliefTextureUrl: 'data/global/ortho.jpg',
+    }),
     terrain: async (step) => { const m = await loadMeta(); return { ...downsample(await loadDem(), m.width, m.height, step), cell: m.cell_m * Math.max(1, step | 0) }; },
     layer: derived,
     route: unsupported,
@@ -213,8 +233,10 @@ function localBackend() {
 }
 
 export function createBackend() {
+  // 預設：WebAssembly 規劃引擎（路線規劃、EVA 都需要它）
+  // ?server：本機 mars-server；?viewer：組員做的純 JS 地圖檢視模式（不含路線規劃）
   const query = new URLSearchParams(location.search);
   if (query.has('server')) return httpBackend();
-  if (query.has('wasm')) return wasmBackend();
-  return localBackend();
+  if (query.has('viewer')) return localBackend();
+  return wasmBackend();
 }

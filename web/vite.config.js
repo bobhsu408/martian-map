@@ -13,6 +13,10 @@ const processedFiles = [
 // Serve and package only the processed DEM. The original .IMG remains outside
 // the web public directory and is never copied into the browser bundle.
 export default defineConfig({
+  base: './', // 相對路徑：可放在 GitHub Pages 子路徑或直接開資料夾
+  server: { proxy: { '/api': 'http://127.0.0.1:8080' } },
+  worker: { format: 'es' },
+  build: { outDir: 'dist', chunkSizeWarningLimit: 2000, target: 'es2022' },
   plugins: [{
     name: 'serve-processed-dem',
     configureServer(server) {

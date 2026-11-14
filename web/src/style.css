@@ -130,3 +130,16 @@ label.check input { width: auto; margin: 0; }
   #hud { left: 50%; width: calc(100vw - 24px); bottom: auto; top: 12px; }
   #dpad { bottom: calc(55% + 24px); }
 }
+
+/* ---------- layer stack ---------- */
+.layer-row { display: grid; grid-template-columns: 18px 1fr 70px; align-items: center; gap: 6px; margin: 3px 0; }
+.layer-row input[type=checkbox] { width: auto; margin: 0; }
+.layer-row input[type=range] { width: 70px; }
+.legend-item { margin-top: 6px; }
+.legend-item .name { color: var(--muted); font-size: 10px; }
+.legend-item .bar { height: 8px; border-radius: 3px; margin: 2px 0; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+#globe { margin-top: 8px; }
+#globe-ui { position: fixed; top: 16px; left: calc(50% + 180px); transform: translateX(-50%); display: flex; gap: 8px; }
+#globe-ui button { width: auto; padding: 8px 14px; }
+#dpad.hidden, #hud.hidden { display: none; }

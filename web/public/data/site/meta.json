@@ -1,0 +1,97 @@
+{
+  "base": [
+    735.5399169921875,
+    436.0628662109375
+  ],
+  "beacons": [
+    {
+      "id": "hab",
+      "kind": "lora",
+      "label": "Habitat mast",
+      "x": 743.5399169921875,
+      "y": 436.0628662109375
+    },
+    {
+      "id": "rover",
+      "kind": "lora",
+      "label": "Rover (parked)",
+      "x": 880.5399169921875,
+      "y": 577.402587890625
+    },
+    {
+      "id": "relay",
+      "kind": "lora",
+      "label": "Relay mast (high ground)",
+      "x": 1506.490966796875,
+      "y": 1.0117467641830444
+    },
+    {
+      "id": "uwb1",
+      "kind": "uwb",
+      "label": "UWB near stop A",
+      "x": 698.6277465820312,
+      "y": 1397.7215576171875
+    },
+    {
+      "id": "uwb2",
+      "kind": "uwb",
+      "label": "UWB near stop B",
+      "x": 1024.2366943359375,
+      "y": 1290.5279541015625
+    },
+    {
+      "id": "uwb3",
+      "kind": "uwb",
+      "label": "UWB near stop C",
+      "x": 286.4855041503906,
+      "y": 1616.7418212890625
+    },
+    {
+      "id": "uwb_mid",
+      "kind": "uwb",
+      "label": "UWB mid-traverse",
+      "x": 716.3167114257812,
+      "y": 936.8775024414062
+    }
+  ],
+  "cell_m": 2.023493528366089,
+  "geo": {
+    "lat_max": -4.8131355015598745,
+    "lat_min": -4.846862029439505,
+    "lon_max": 137.3168367525,
+    "lon_min": 137.2831113725
+  },
+  "height": 988,
+  "name": "Mount Sharp foothills, Gale crater (HiRISE DTM + orthophoto)",
+  "source": "NASA/JPL/UArizona HiRISE DTM DTEEC_001488_1750_001752_1750_U02 (team preprocessing), resampled to 2.02 m; lat -4.8469..-4.8131, lon 137.2831..137.3168",
+  "targets": [
+    {
+      "desc": "Rough-textured but passable bedrock on lower Mount Sharp, auto-selected from HiRISE slope/roughness as a candidate sampling stop (not a confirmed boxwork exposure).",
+      "id": "st1",
+      "image": null,
+      "name": "Science stop A — textured bedrock",
+      "science": 1.0,
+      "x": 697.093505859375,
+      "y": 1437.692138671875
+    },
+    {
+      "desc": "Rough-textured but passable bedrock on lower Mount Sharp, auto-selected from HiRISE slope/roughness as a candidate sampling stop (not a confirmed boxwork exposure).",
+      "id": "st2",
+      "image": null,
+      "name": "Science stop B — textured bedrock",
+      "science": 0.800000011920929,
+      "x": 1037.0404052734375,
+      "y": 1328.4234619140625
+    },
+    {
+      "desc": "Rough-textured but passable bedrock on lower Mount Sharp, auto-selected from HiRISE slope/roughness as a candidate sampling stop (not a confirmed boxwork exposure).",
+      "id": "st3",
+      "image": null,
+      "name": "Science stop C — textured bedrock",
+      "science": 0.6000000238418579,
+      "x": 272.1598815917969,
+      "y": 1644.0885009765625
+    }
+  ],
+  "width": 988
+}
