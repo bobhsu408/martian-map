@@ -89,8 +89,8 @@ pub fn generate(spec: &SynthSpec) -> World {
     let base = (0.15 * wm, 0.12 * hm);
     let box_c = (0.72 * wm, 0.78 * hm);
     let box_r = 0.13 * wm.min(hm);
-    let gentle_gap_x = 0.22 * wm; // 西側緩坡缺口
-    let steep_gap_x = 0.55 * wm; // 中央陡窄缺口
+    let gentle_gap_x = 0.08 * wm; // 西側緩坡缺口：繞遠但安全
+    let steep_gap_x = 0.45 * wm; // 中央陡窄缺口：在基地→boxwork 的直線上，約 20°、兩側是懸崖
     let scarp_y0 = 0.48 * hm;
 
     // 撞擊坑：避開基地、目標區和缺口
@@ -119,7 +119,7 @@ pub fn generate(spec: &SynthSpec) -> World {
 
             // 2) 陡崖：寬度隨 x 改變，缺口處變寬（坡度變緩）
             let ys = scarp_y0 + 60.0 * (x / 310.0).sin();
-            let width = 6.0 + 230.0 * gauss(x - gentle_gap_x, 55.0) + 55.0 * gauss(x - steep_gap_x, 18.0);
+            let width = 6.0 + 230.0 * gauss(x - gentle_gap_x, 55.0) + 100.0 * gauss(x - steep_gap_x, 14.0);
             z += 25.0 * smoothstep(-0.5 * width, 0.5 * width, y - ys);
 
             // 3) 撞擊坑：碗狀 + 坑緣
