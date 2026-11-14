@@ -1,7 +1,9 @@
 <!-- SI-generated: drafted by Claude Code (SI tool); reviewed and maintained by the team. -->
 # Martian Map Engine — API 契約 v1
 
-後端：`mars-server`（Rust / axum），預設 `http://localhost:8080`。同一個 server 也提供 `web/dist` 靜態檔，**全程離線**。
+規劃引擎 `mars-core` 有兩種執行方式，介面完全相同：
+- **WebAssembly（預設）**：`mars-wasm` 在瀏覽器的 Web Worker 裡執行，網頁本身就是完整系統，可放在 GitHub Pages；載入後**拔網路也能用**。前端用 `web/src/api.js` 呼叫。
+- **本機 server**：`mars-server`（Rust / axum），`http://localhost:8080`，同時提供 `web/dist` 靜態檔。網址加 `?server` 讓前端改用它。
 本文件是前後端的唯一依據；要改請先改這份文件，並通知對方。
 
 ---
@@ -33,6 +35,7 @@ HTTP 4xx，body：`{"error": "<code>", "message": "<說明>"}`
 | `blocked` | 422 | 起點或終點落在危險區（hazard）裡 |
 | `no_path` | 422 | 找不到可通行的路線 |
 | `unknown_layer` | 404 | 圖層名稱不存在 |
+| `bad_request` | 400 | （WASM）JSON 格式錯誤 |
 
 ---
 
@@ -50,12 +53,23 @@ HTTP 4xx，body：`{"error": "<code>", "message": "<說明>"}`
     {"id": "bx1", "name": "Boxwork ridge A", "x": 1500.0, "y": 1650.0,
      "science": 0.9, "desc": "Mineral-vein ridges from ancient groundwater", "image": null}
   ],
+  "beacons": [
+    {"id": "hab", "kind": "lora", "x": 315.2, "y": 245.8, "label": "Habitat mast"},
+    {"id": "uwb4", "kind": "uwb", "x": 1434.6, "y": 1567.3, "label": "UWB boxwork center"}
+  ],
   "params": {
     "slope_max_deg": 25.0,
     "walk_speed_mps": 1.0,
     "o2_capacity_min": 480,
     "o2_reserve_min": 30,
-    "dose_msv_per_day": 0.7
+    "dose_msv_per_day": 0.7,
+    "nav": {
+      "lora": {"sigma_m": 2.0, "max_range_m": 1500.0},
+      "uwb":  {"sigma_m": 0.15, "max_range_m": 150.0},
+      "beacon_antenna_m": 2.0, "suit_antenna_m": 2.0,
+      "dr_growth_per_m": 0.02,
+      "offroute_warn_m": 15.0, "offroute_replan_m": 30.0, "hazard_buffer_m": 10.0
+    }
   },
   "layers": {
     "slope":  {"unit": "deg", "min": 0, "max": 45},
@@ -63,7 +77,7 @@ HTTP 4xx，body：`{"error": "<code>", "message": "<說明>"}`
     "hazard": {"unit": "bool"},
     "cost":   {"unit": "rel", "min": 1, "max": 20},
     "pnr":    {"unit": "bool"},
-    "svf":    {"unit": "ratio", "min": 0, "max": 1}
+    "coverage": {"unit": "beacons", "min": 0, "max": 6}
   }
 }
 ```
@@ -78,7 +92,7 @@ HTTP 4xx，body：`{"error": "<code>", "message": "<說明>"}`
 - 前端用法：`new Float32Array(await res.arrayBuffer())`。
 
 ## 3. `GET /api/layer/{name}`
-`name` ∈ `slope | rough | hazard | cost | pnr | svf`（`svf` 是加分項，未實作時回 404）
+`name` ∈ `slope | rough | hazard | cost | pnr | coverage`
 
 | query | 用於 | 預設 |
 |---|---|---|
@@ -90,6 +104,7 @@ HTTP 4xx，body：`{"error": "<code>", "message": "<說明>"}`
 
 回應：`application/octet-stream`，**u8** 陣列，排列方式見 §0；值的意義見 `meta.layers`。
 - `pnr` 圖層：255 代表「走得到、而且走得回基地」（安全區域），0 代表不安全。
+- `coverage` 圖層：每格可見信標數（0–6，以 4×4 格為一區塊計算）。
 
 ## 4. `POST /api/route`
 ```json
@@ -152,18 +167,50 @@ EVA 進行中發生狀況時呼叫：回報新障礙，或 O2 低於預期。
 - 判斷規則：如果「走到目標」加上「從目標走回基地」的總時間，再加上 `o2_reserve_min`，超過 `o2_min`，就設 `must_return = true`。這時 `route` 為 `null`，並提供 `return_route`（從 `pos` 回基地的路線）。
 - `obstacles` 會**累積**：前端每次都要傳**目前已知的全部**障礙，後端不保存狀態。
 
-## 7. `POST /api/localize`（加分項，可能不實作）
+## 7. `POST /api/localize/sim` — 本地信標定位（**模擬量測**）
+不靠地球、不靠 GPS：用基地／探測車／中繼站的 LoRa 信標（長距離）和沿路線佈設的 UWB 信標（短距離高精度）測距定位。
+後端用 DEM 判斷哪些信標有視線，再把真實距離加上高斯雜訊當作「量測」——**這是模擬**，回應中 `simulated: true`。
 ```json
 // request
-{"odometry": [[dx, dy], ...], "sun_obs": [{"t_utc": "...", "azimuth_deg": 0.0}]}
-// response
-{"estimate": [x, y], "sigma_m": 12.0, "particles": [[x, y], ...]}
+{"true_pos": [900.0, 1000.0], "prev_estimate": [897.5, 1001.2], "prev_sigma": 2.1, "step_m": [3.0, 2.5], "seed": 42}
 ```
+```json
+// response 200
+{
+  "estimate": [899.4, 1000.8],
+  "sigma_m": 1.9,
+  "visible_beacons": [{"id": "hab", "kind": "lora", "x": 315.2, "y": 245.8, "range_m": 958.3}],
+  "mode": "multilateration",
+  "simulated": true
+}
+```
+- `step_m`：自上次估計以來的位移 [dx, dy]（步數／慣性量測），航位推算用。
+- 可見信標 ≥ 3 → `mode: "multilateration"`（Gauss–Newton 加權最小平方）；否則 `"dead_reckoning"`，`sigma_m` 每走 1 m 增加 `dr_growth_per_m`。
+
+## 8. `POST /api/track` — 偏離路線偵測（HUD 用）
+```json
+// request
+{"pos": [899.4, 1000.8], "sigma_m": 1.9, "path": [[x, y, z], ...], "lookahead_m": 25}
+```
+```json
+// response 200
+{
+  "xte_m": 4.2, "along_m": 812.0, "remaining_m": 1588.0,
+  "next": [915.0, 1018.0], "side": -1,
+  "status": "on_route | off_route | replan", "reason": "on_route | off_route | far_off_route | off_route_near_hazard",
+  "clearance_m": 41.0, "t_return_min": 19.5, "coverage": 3
+}
+```
+- `xte_m`：到路線折線的垂直距離（cross-track error）。`next`：沿路線前方 `lookahead_m` 的導引點（給方向箭頭）。
+- `side`：+1 = 太空人在路線左側（應往右修正）、−1 = 在右側（應往左修正）。
+- 判斷規則：`xte > 30 m` → `replan`；`xte > 15 m` 且離危險區 `< 10 m` → `replan`；`xte > 15 m` 且 `> 2σ` → `off_route`；其餘 `on_route`。
+  （危險緩衝條件只在已偏離時生效：science 路線本身就會經過離危險區 2 m 的地方。）
+- `t_return_min`：從此處走回基地所需時間（不含新回報的障礙），HUD 用來判斷「必須返回」。
 
 ---
 
-## 前端 mock 模式
-後端完成前，前端照本文件用 `web/public/mock/` 下的假資料開發：
-- `meta.json`、`route_safe.json`、`compare.json`、`replan_return.json`
-- 二進位端點（terrain／layer）在 mock 模式由前端自己產生假的高度圖。
-- 在 `api.js` 用 `const MOCK = true` 切換；切到真實後端時只改這個值。
+## WebAssembly 介面（`mars-wasm`）
+`WasmEngine` 的方法與上面的端點一一對應，請求／回應都是同樣的 JSON 字串：
+`meta()`、`terrain(step)`、`layer(name, query_json)`、`route(json)`、`compare(json)`、`replan(json)`、`localize_sim(json)`、`track(json)`。
+二進位網格（terrain／layer）回傳 `Uint8Array`：前 12 bytes 是 header（`w: u32`、`h: u32`、`cell_m: f32`，little-endian），後面是資料。
+錯誤以 JSON 字串丟出（格式同 §0）。前端只透過 `web/src/api.js` 呼叫，不需要知道是 WASM 還是 HTTP。

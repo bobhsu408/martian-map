@@ -75,3 +75,55 @@ footer { margin-top: 14px; color: var(--muted); font-size: 10px; line-height: 1.
   #panel { width: auto; right: 12px; top: auto; height: 55%; }
   #alert { margin-left: 0; }
 }
+
+/* ---------- loading ---------- */
+#loading {
+  position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; gap: 14px;
+  align-items: center; justify-content: center; background: #120a07; color: var(--muted);
+}
+#loading.done { display: none; }
+.spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #3a2318; border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+label.check { display: flex; align-items: center; gap: 6px; text-transform: none; font-size: 12px; color: var(--text); margin: 8px 0 0; letter-spacing: 0; }
+label.check input { width: auto; margin: 0; }
+.toggles label.check { margin: 0; flex: 1; }
+
+/* ---------- HUD ---------- */
+#hud {
+  position: fixed; left: calc(50% + 180px); bottom: 18px; transform: translateX(-50%);
+  width: min(560px, calc(100vw - 400px)); background: rgba(10, 12, 16, 0.82); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 12px; font-size: 12px; backdrop-filter: blur(6px);
+}
+#status-pill {
+  text-align: center; font-weight: bold; letter-spacing: 2px; padding: 6px; border-radius: 6px;
+  background: rgba(63, 209, 122, 0.15); color: var(--ok); border: 1px solid var(--ok);
+}
+#status-pill.warn { background: rgba(242, 201, 76, 0.15); color: var(--warn); border-color: var(--warn); }
+#status-pill.bad { background: rgba(255, 90, 54, 0.18); color: var(--bad); border-color: var(--bad); }
+#compass { display: flex; align-items: center; gap: 12px; justify-content: center; margin: 8px 0; }
+#arrow {
+  width: 52px; height: 52px; border-radius: 50%; border: 2px solid var(--accent); color: var(--accent);
+  display: flex; align-items: center; justify-content: center; font-size: 26px; transition: transform 0.15s linear;
+}
+#compass-text { font-size: 13px; }
+.hud-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.hud-grid div { background: #161b22; border-radius: 6px; padding: 5px 7px; }
+.hud-grid span { display: block; color: var(--muted); font-size: 10px; }
+.hud-grid b { font-size: 13px; }
+.haptic { margin-top: 8px; text-align: center; padding: 5px; border-radius: 6px; color: var(--muted); border: 1px dashed var(--line); }
+.haptic.on { background: rgba(255, 122, 61, 0.35); color: #fff; border-style: solid; border-color: var(--accent); }
+.haptic.hazard.on, .haptic.return.on { background: rgba(255, 90, 54, 0.45); border-color: var(--bad); }
+
+#dpad { position: fixed; right: 18px; bottom: 18px; display: grid; grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(2, 52px); gap: 6px; }
+#dpad button { font-size: 20px; padding: 0; }
+#dpad [data-k=ArrowUp] { grid-column: 2; grid-row: 1; }
+#dpad [data-k=ArrowLeft] { grid-column: 1; grid-row: 2; }
+#dpad [data-k=ArrowDown] { grid-column: 2; grid-row: 2; }
+#dpad [data-k=ArrowRight] { grid-column: 3; grid-row: 2; }
+.label3d.lora { border-color: #ff9f43; color: #ffd2a8; }
+.label3d.uwb { border-color: #4dd6ff; color: #bff0ff; font-size: 10px; }
+@media (max-width: 700px) {
+  #hud { left: 50%; width: calc(100vw - 24px); bottom: auto; top: 12px; }
+  #dpad { bottom: calc(55% + 24px); }
+}

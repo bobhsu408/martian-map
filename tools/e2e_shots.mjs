@@ -1,6 +1,6 @@
 // SI-generated: end-to-end smoke test by Claude Code (SI tool).
 // 用 headless Chrome（DevTools Protocol）跑完整 demo 流程並截圖：
-//   node tools/e2e_shots.mjs <輸出資料夾>   （mars-server 需在 :8080 執行）
+//   node tools/e2e_shots.mjs <輸出資料夾> [網址]   （預設 http://127.0.0.1:8080/）
 import { spawn } from 'node:child_process';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -37,29 +37,38 @@ try {
   await send('Runtime.enable');
   await send('Page.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-  await send('Page.navigate', { url: 'http://127.0.0.1:8080/' });
-  await sleep(3000);
+  const url = process.argv[3] || 'http://127.0.0.1:8080/';
+  await send('Page.navigate', { url });
+  for (let k = 0; k < 120; k++) {
+    await sleep(500);
+    if (await evalJs(`document.getElementById('loading').classList.contains('done')`)) break;
+  }
+  const click = (id) => evalJs(`document.getElementById('${id}').click()`);
+  const layer = (v) => evalJs(`(()=>{const s=document.getElementById('layer'); s.value='${v}'; s.dispatchEvent(new Event('change'));})()`);
+  await sleep(1000);
   await shot('01_loaded.png');
-  await evalJs(`document.getElementById('plan').click()`);
+  await click('plan');
   await sleep(2500);
   await shot('02_routes.png');
-  await evalJs(`(()=>{const s=document.getElementById('layer'); s.value='hazard'; s.dispatchEvent(new Event('change'));})()`);
-  await sleep(1500);
-  await shot('03_hazard_layer.png');
-  await evalJs(`document.querySelector('.route-card[data-key=science]').click()`);
-  await evalJs(`document.getElementById('start').click()`);
-  await sleep(2500);
-  await shot('04_eva.png');
-  await evalJs(`document.getElementById('rockfall').click()`);
-  await sleep(2500);
-  await shot('05_rockfall_reroute.png');
-  await evalJs(`document.getElementById('leak').click()`);
+  await layer('coverage');
   await sleep(2000);
-  await evalJs(`(()=>{const s=document.getElementById('layer'); s.value='pnr'; s.dispatchEvent(new Event('change'));})()`);
-  await sleep(2500);
-  await shot('06_o2_leak_return.png');
+  await shot('03_coverage_layer.png');
+  await layer('none');
+  await evalJs(`document.getElementById('autopilot').checked = true`);
+  await click('start');
   await sleep(6000);
-  await shot('07_end.png');
+  await shot('04_eva_walking.png');
+  await click('drift');
+  await sleep(1500);
+  await shot('05_drift_offroute.png');
+  await sleep(4000);
+  await shot('06_after_replan.png');
+  await click('rockfall');
+  await sleep(4000);
+  await shot('07_rockfall_reroute.png');
+  await click('leak');
+  await sleep(4000);
+  await shot('08_o2_leak_return.png');
   const logText = await evalJs(`document.getElementById('log').innerText`);
   console.log('--- mission log ---\n' + logText);
   console.log('--- page errors ---\n' + (errors.join('\n') || '(none)'));

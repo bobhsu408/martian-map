@@ -2,6 +2,8 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  base: './', // 相對路徑：可放在 GitHub Pages 子路徑或直接開資料夾
   server: { proxy: { '/api': 'http://127.0.0.1:8080' } },
-  build: { outDir: 'dist', chunkSizeWarningLimit: 2000 },
+  worker: { format: 'es' },
+  build: { outDir: 'dist', chunkSizeWarningLimit: 2000, target: 'es2022' },
 });

@@ -203,7 +203,8 @@ pub fn generate(spec: &SynthSpec) -> World {
         },
     ];
 
-    // 信標：基地與探測車是 LoRa（長距離），沿安全路線與 boxwork 附近放可攜式 UWB。
+    // 信標：基地、探測車、陡崖頂中繼站是 LoRa（長距離；中繼站在高處，崖上崖下都看得到），
+    // 沿安全路線與 boxwork 附近放可攜式 UWB。
     let b = |id: &str, kind: BeaconKind, x: f32, y: f32, label: &str| Beacon {
         id: id.into(),
         kind,
@@ -226,6 +227,13 @@ pub fn generate(spec: &SynthSpec) -> World {
             base.0 + 212.0,
             base.1 + 212.0,
             "Rover (parked)",
+        ),
+        b(
+            "relay",
+            BeaconKind::Lora,
+            0.33 * wm,
+            scarp_at(0.33 * wm) + 18.0,
+            "Relay mast (scarp rim)",
         ),
         b(
             "uwb1",

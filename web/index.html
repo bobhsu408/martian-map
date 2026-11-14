@@ -3,11 +3,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
     <title>Martian Map — EVA Planner</title>
   </head>
   <body>
     <div id="scene"></div>
+
+    <div id="loading">
+      <div class="spinner"></div>
+      <div id="loading-text">Building terrain model on-board (WebAssembly)…</div>
+    </div>
 
     <aside id="panel">
       <header>
@@ -31,6 +36,7 @@
           <option value="hazard">Hazards (no-go)</option>
           <option value="cost:safe">Penalty cost — safe</option>
           <option value="cost:science">Penalty cost — science</option>
+          <option value="coverage">Beacon coverage</option>
           <option value="pnr">Point-of-no-return safe zone</option>
         </select>
         <div id="legend" class="legend"></div>
@@ -44,17 +50,26 @@
 
       <section id="eva-controls">
         <button id="start" disabled>▶ Start EVA</button>
+        <label class="check"><input type="checkbox" id="autopilot" /> Autopilot (follow route)</label>
+        <div class="hint">Walk: W/↑ forward · A/D or ←/→ turn · S/↓ back · drag to look around</div>
         <div class="row">
-          <button id="rockfall" disabled>⚠ Report rockfall</button>
+          <button id="rockfall" disabled>⚠ Rockfall</button>
+          <button id="drift" disabled>↯ Simulate drift</button>
+        </div>
+        <div class="row">
           <button id="leak" disabled>O₂ leak</button>
+          <button id="home" disabled>⌂ Return to base</button>
         </div>
         <button id="reset">Reset</button>
       </section>
 
-      <section class="gauges">
-        <div><span>EVA time</span><b id="g-time">0 min</b></div>
-        <div><span>O₂ left</span><b id="g-o2">— min</b></div>
-        <div><span>Dose</span><b id="g-dose">0.000 mSv</b></div>
+      <section>
+        <label>Feedback</label>
+        <div class="row toggles">
+          <label class="check"><input type="checkbox" id="opt-sound" checked /> 🔊 Sound</label>
+          <label class="check"><input type="checkbox" id="opt-vibe" checked /> 📳 Vibration</label>
+        </div>
+        <div class="hint">1 pulse = steer left · 2 pulses = steer right · faster = further off route · long = hazard · SOS = return now</div>
       </section>
 
       <section>
@@ -64,6 +79,28 @@
 
       <footer id="source"></footer>
     </aside>
+
+    <!-- EVA heads-up display -->
+    <div id="hud" class="hidden">
+      <div id="status-pill">ON ROUTE</div>
+      <div id="compass"><div id="arrow">▲</div><div id="compass-text">—</div></div>
+      <div class="hud-grid">
+        <div><span>EVA time</span><b id="g-time">0 min</b></div>
+        <div><span>O₂ left</span><b id="g-o2">— min</b></div>
+        <div><span>Return needs</span><b id="g-ret">— min</b></div>
+        <div><span>Position</span><b id="g-pos">± — m</b></div>
+        <div><span>Beacons</span><b id="g-bcn">—</b></div>
+        <div><span>Terrain</span><b id="g-safe">—</b></div>
+      </div>
+      <div id="haptic" class="haptic idle">📳 quiet — on route</div>
+    </div>
+
+    <div id="dpad" class="hidden">
+      <button data-k="ArrowUp">▲</button>
+      <button data-k="ArrowLeft">◀</button>
+      <button data-k="ArrowDown">▼</button>
+      <button data-k="ArrowRight">▶</button>
+    </div>
 
     <div id="alert" class="hidden"></div>
     <script type="module" src="/src/main.js"></script>
