@@ -25,6 +25,9 @@ const S = {
   view: '3d', mapExtent: 'local', ortho: false,
   layers: {}, layerCache: {},
   eva: null, // 進行中的 EVA
+  walk: null, // 太空人（EVA 前後也能自由走動）
+  cam: 'third', look: { yaw: 0, pitch: 0 }, // 鏡頭：third / first / orbit
+  tabletUp: false, miniHalf: null, // 手持平板是否舉起、小地圖縮放
 };
 
 // ---------------------------------------------------------------- scene
@@ -33,13 +36,17 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuff
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 host.appendChild(renderer.domElement);
 const labels = new CSS2DRenderer();
-Object.assign(labels.domElement.style, { position: 'absolute', top: '0', pointerEvents: 'none' });
+Object.assign(labels.domElement.style, { position: 'absolute', top: '0', pointerEvents: 'none', zIndex: '5' });
 host.appendChild(labels.domElement);
 
 const scene = new THREE.Scene();
 scene.background = skyTexture();
 const FOG_PLAN = new THREE.Fog('#7a5038', 3500, 9000), FOG_EVA = new THREE.Fog('#b88a63', 250, 2200);
 scene.fog = FOG_PLAN;
+/** 霧：地面視角（第一／第三人稱）用近霧增加臨場感；俯瞰用遠霧；2D 與地球儀不用霧。 */
+function applyFog() {
+  scene.fog = S.view === '2d' || S.inGlobe ? null : (S.cam === 'orbit' && !S.eva ? FOG_PLAN : FOG_EVA);
+}
 const perspectiveCamera = new THREE.PerspectiveCamera(50, 1, 1, 600000);
 let camera = perspectiveCamera;
 const perspectiveControls = new OrbitControls(perspectiveCamera, renderer.domElement);
@@ -331,7 +338,8 @@ async function toggleGlobe() {
   g.globe.visible = S.inGlobe;
   for (const o of siteObjects()) o.visible = !S.inGlobe;
   if (S.region) S.region.mesh.visible = !S.inGlobe && VIEW_KM[+$('view-dist').value] > 3;
-  scene.fog = S.inGlobe ? null : (S.eva ? FOG_EVA : FOG_PLAN);
+  applyFog();
+  perspectiveControls.enabled = S.inGlobe || S.cam === 'orbit';
   scene.background = S.inGlobe ? new THREE.Color('#05060a') : skyTexture();
   $('globe').textContent = S.inGlobe ? '⤶ Back to EVA site' : '🌍 Mars globe (MOLA)';
   if (S.inGlobe) {
@@ -451,7 +459,25 @@ function routeMesh(route, color) {
     new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), Math.min(pts.length * 2, 5000), 1.6, 6, false),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 }),
   );
+  mesh.layers.set(3); // 第三人稱／俯瞰看的路線
   routeGroup.add(mesh);
+  // 第一人稱：貼地的細線（粗管子在眼睛高度看會太大、和地面閃爍）
+  const thin = new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map((v) => v.clone().setY(v.y + 0.4))), Math.min(pts.length * 2, 5000), 0.35, 5, false),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95 }),
+  );
+  thin.layers.set(2);
+  routeGroup.add(thin);
+  mesh.userData.thin = thin;
+  // 平板小地圖用的粗線（只在 layer 1，主畫面看不到）
+  const mini = new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), Math.min(pts.length * 2, 5000), 7, 4, false),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false }),
+  );
+  mini.layers.set(1);
+  mini.renderOrder = 900;
+  routeGroup.add(mini);
+  mesh.userData.mini = mini;
   return mesh;
 }
 function clearRoutes() {
@@ -460,7 +486,11 @@ function clearRoutes() {
 }
 function selectRoute(key) {
   S.selected = key;
-  for (const [k, r] of Object.entries(S.routes)) r.mesh.material.opacity = k === key ? 1 : 0.25;
+  for (const [k, r] of Object.entries(S.routes)) {
+    r.mesh.material.opacity = k === key ? 1 : 0.25;
+    if (r.mesh.userData.mini) r.mesh.userData.mini.material.opacity = k === key ? 1 : 0.3;
+    if (r.mesh.userData.thin) r.mesh.userData.thin.visible = k === key;
+  }
   document.querySelectorAll('.route-card').forEach((c) => c.classList.toggle('selected', c.dataset.key === key));
   $('start').disabled = !key || !!S.eva;
   updateSteps();
@@ -501,7 +531,7 @@ async function planRoutes() {
   if (S.eva) return;
   const t0 = performance.now();
   try {
-    const res = await api.compare({ start: S.meta.base, goal: [S.goal.x, S.goal.y] });
+    const res = await api.compare({ start: [S.walk.pos.x, S.walk.pos.y], goal: [S.goal.x, S.goal.y] });
     clearRoutes();
     $('routes').innerHTML = '';
     for (const key of ['safe', 'balanced', 'science']) {
@@ -526,7 +556,12 @@ function setActiveRoute(route, key) {
 const keys = new Set();
 const keyName = (e) => ({ w: 'ArrowUp', s: 'ArrowDown', a: 'ArrowLeft', d: 'ArrowRight' })[e.key.toLowerCase()] || e.key;
 addEventListener('keydown', (e) => {
-  if (!S.eva) return;
+  const tag = e.target?.tagName;
+  const typing = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
+  if (e.key === 'Tab' || (!typing && (e.key === 'm' || e.key === 'M'))) { e.preventDefault(); setTablet(!S.tabletUp); return; }
+  if (e.key === 'Escape') { setTablet(false); return; }
+  if (typing) return;
+  if (e.key === 'v' || e.key === 'V') { setCam(S.cam === 'first' ? 'third' : 'first'); return; }
   const k = keyName(e);
   if (k.startsWith('Arrow')) { keys.add(k); e.preventDefault(); }
 });
@@ -545,26 +580,28 @@ function startEva() {
   if (!r) return;
   if (S.view !== '3d') setViewMode('3d');
   feedback.unlockAudio();
-  const [bx, by] = S.meta.base;
+  const pos = S.walk.pos, bx = pos.x, by = pos.y;
   const first = r.route.path[Math.min(1, r.route.path.length - 1)];
   S.eva = {
     t: 0, o2: S.meta.params.o2_capacity_min, o2Rate: 1,
-    pos: { x: bx, y: by }, heading: Math.atan2(first[1] - by, first[0] - bx),
+    pos, heading: Math.atan2(first[1] - by, first[0] - bx),
     est: { x: bx, y: by }, sigma: 0.5, lastLocPos: { x: bx, y: by }, locTimer: 0, locBusy: false, seed: 1,
     route: r.route, routeKey: S.selected, mode: S.selected, nav: null, loc: null,
     drift: null, returning: false, done: false, replanning: false, lastReplan: 0,
   };
-  astro.visible = estMarker.visible = true;
-  if (!S.inGlobe) scene.fog = FOG_EVA;
+  estMarker.visible = true;
+  applyFog();
   $('hud').classList.remove('hidden');
-  $('dpad').classList.remove('hidden');
+  setTablet(false);
   ['start', 'plan'].forEach((id) => ($(id).disabled = true));
   ['rockfall', 'leak', 'drift', 'home'].forEach((id) => ($(id).disabled = false));
   placeAstronaut();
-  // 鏡頭切到太空人後方
-  const p = astro.position;
-  controls.target.copy(p);
-  camera.position.set(p.x - Math.cos(S.eva.heading) * 60, p.y + 35, p.z + Math.sin(S.eva.heading) * 60);
+  S.look.yaw = 0;
+  if (S.cam === 'orbit') {
+    const p = astro.position;
+    controls.target.copy(p);
+    camera.position.set(p.x - Math.cos(S.eva.heading) * 60, p.y + 35, p.z + Math.sin(S.eva.heading) * 60);
+  }
   updateSteps();
   log(`EVA started on ${S.selected} route — ${$('autopilot').checked ? 'autopilot' : 'manual control (W/A/S/D)'}`, 'ok');
   showAlert(`EVA IN PROGRESS · ${S.selected.toUpperCase()} ROUTE`, true, 2500);
@@ -604,13 +641,7 @@ function evaTick(dt) {
   if (keys.has('ArrowDown')) fwd = -0.5;
   e.heading += turn * 2.2 * dt;
 
-  let blocked = false;
-  if (fwd !== 0) {
-    const v = walkSpeed(e.pos.x, e.pos.y) * fwd * dt;
-    const nx = e.pos.x + Math.cos(e.heading) * v, ny = e.pos.y + Math.sin(e.heading) * v;
-    if (isHazard(nx, ny)) blocked = true;
-    else { e.pos.x = nx; e.pos.y = ny; }
-  }
+  const blocked = stepWalker(e.pos, e.heading, fwd, dt) && fwd > 0;
   // ---- 模擬漂移（例如鬆軟沙地滑移、導航錯誤）：1.2 秒內把真實位置推到側邊
   if (e.drift) {
     const k = Math.min(dt / Math.max(e.drift.left, 1e-3), 1);
@@ -622,10 +653,12 @@ function evaTick(dt) {
   e.blocked = blocked;
   placeAstronaut();
 
-  // ---- 鏡頭跟隨
-  const delta = astro.position.clone().sub(controls.target);
-  controls.target.add(delta);
-  camera.position.add(delta);
+  // ---- 鏡頭跟隨（俯瞰模式；第一／第三人稱由 followCamera 處理）
+  if (S.cam === 'orbit') {
+    const delta = astro.position.clone().sub(controls.target);
+    controls.target.add(delta);
+    camera.position.add(delta);
+  }
 
   // ---- 定位（每 LOC_INTERVAL 秒一次；在 Worker 裡算，不卡畫面）
   e.locTimer += dt;
@@ -703,6 +736,7 @@ function updateHud() {
   const tRet = n.t_return_min;
   $('g-ret').textContent = Number.isFinite(tRet) ? `${tRet.toFixed(0)} min` : '—';
   const mustReturn = !e.returning && Number.isFinite(tRet) && e.o2 < tRet + reserve + 10;
+  if (mustReturn && !e.raisedForReturn) { e.raisedForReturn = true; setTablet(true); }
   const clr = n.clearance_m;
   $('g-safe').textContent = e.blocked ? 'NO-GO ahead' : clr >= 20 ? 'safe' : clr >= 8 ? `caution ${clr.toFixed(0)} m` : `hazard ${clr.toFixed(0)} m`;
   $('g-safe').style.color = e.blocked || clr < 8 ? 'var(--bad)' : clr < 20 ? 'var(--warn)' : 'var(--ok)';
@@ -728,6 +762,7 @@ function updateHud() {
   let rel = bearing - e.heading;
   rel = Math.atan2(Math.sin(rel), Math.cos(rel));
   $('arrow').style.transform = `rotate(${(-rel * 180) / Math.PI}deg)`;
+  $('tb-arrow').style.transform = $('arrow').style.transform;
   const turnTxt = Math.abs(rel) < 0.2 ? 'straight ahead' : rel > 0 ? `turn left ${Math.round((rel * 180) / Math.PI)}°` : `turn right ${Math.round((-rel * 180) / Math.PI)}°`;
   $('compass-text').innerHTML = `${turnTxt}<br><small>${(n.remaining_m / 1000).toFixed(2)} km to ${e.returning ? 'base' : 'target'}</small>`;
 }
@@ -824,13 +859,13 @@ function reset() {
   S.obstacles = [];
   keys.clear();
   obstacleGroup.children.slice().forEach((m) => obstacleGroup.remove(m));
-  astro.visible = estMarker.visible = false;
+  estMarker.visible = false;
+  initWalker();
   beaconLines.geometry = new THREE.BufferGeometry();
-  scene.fog = FOG_PLAN;
+  applyFog();
   clearRoutes();
   $('routes').innerHTML = '';
   $('hud').classList.add('hidden');
-  $('dpad').classList.add('hidden');
   $('plan').disabled = false;
   ['start', 'rockfall', 'leak', 'drift', 'home'].forEach((id) => ($(id).disabled = true));
   overviewCamera();
@@ -852,6 +887,7 @@ function showAlert(text, info, ms) {
   const a = $('alert');
   a.textContent = text;
   a.className = info ? 'info' : '';
+  if (!info) setTablet(true); // 緊急狀況：平板自動舉起
   clearTimeout(alertTimer);
   alertTimer = setTimeout(() => a.classList.add('hidden'), ms);
 }
@@ -902,7 +938,7 @@ function syncMapVisibility() {
     S.sitePin.scale.setScalar(S.mapExtent === 'regional' ? 0.25 : 1);
   }
   if (rockMesh) rockMesh.visible = !isMap;
-  astro.visible = !isMap && !!S.eva;
+  astro.visible = !isMap && S.cam !== 'first';
   estMarker.visible = !isMap && !!S.eva;
   beaconLines.visible = !isMap;
   obstacleGroup.visible = !isMap;
@@ -910,7 +946,7 @@ function syncMapVisibility() {
   if (S.region) S.region.mesh.visible = !isMap && !S.inGlobe && VIEW_KM[+$('view-dist').value] > 3;
   labels.domElement.style.visibility = isMap ? 'hidden' : '';
   // 2D 相機離地很遠，霧會把整張圖蓋掉 → 2D 模式關閉霧
-  scene.fog = isMap || S.inGlobe ? null : (S.eva ? FOG_EVA : FOG_PLAN);
+  applyFog();
 }
 function setViewMode(mode) {
   if (S.inGlobe) toggleGlobe();
@@ -919,7 +955,7 @@ function setViewMode(mode) {
   if (isMap && !mapCamera) createMapCamera();
   camera = isMap ? mapCamera : perspectiveCamera;
   controls = isMap ? mapControls : perspectiveControls;
-  perspectiveControls.enabled = !isMap;
+  perspectiveControls.enabled = !isMap && S.cam === 'orbit';
   if (mapControls) mapControls.enabled = isMap;
   ['view-3d', 'view-2d'].forEach((id) => {
     const on = (id === 'view-2d') === isMap;
@@ -969,7 +1005,8 @@ function overviewCamera() {
     mapControls.update();
     return;
   }
-  const shift = innerWidth > 700 ? -S.W * 0.16 : 0;
+  if (S.cam !== 'orbit') return;
+  const shift = 0;
   perspectiveCamera.position.set(shift - S.W * 0.05, S.W * 0.78, S.H * 0.9);
   perspectiveControls.target.set(shift, 0, -S.H * 0.04);
   perspectiveControls.update();
@@ -979,6 +1016,7 @@ let down = null;
 renderer.domElement.addEventListener('pointerdown', (e) => (down = [e.clientX, e.clientY]));
 renderer.domElement.addEventListener('pointerup', (e) => {
   if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5 || S.eva || S.mapExtent !== 'local') return;
+  if (S.view === '3d' && S.cam !== 'orbit') return;
   const ray = new THREE.Raycaster();
   ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
   const hit = ray.intersectObject(S.view === '2d' ? mapMesh : terrainMesh)[0];
@@ -990,10 +1028,243 @@ renderer.domElement.addEventListener('pointerup', (e) => {
       y: ((-hit.point.z - b.south) / (b.north - b.south)) * S.H,
     };
   })() : fromV(hit.point);
+  setCustomGoal(p);
+});
+function setCustomGoal(p) {
   $('target').value = 'custom';
   $('target-desc').textContent = `Custom goal at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) m`;
   setGoal(p.x, p.y, `custom point (${p.x.toFixed(0)}, ${p.y.toFixed(0)}) m`);
+}
+
+// ---------------------------------------------------------------- explorer: walker, camera, handheld tablet
+// 畫面只有火星和太空人；系統介面是太空人手上的平板（Tab / M 舉起）。
+
+/** 太空人站到基地旁邊（圓頂外、非危險區）；EVA 前後都能自由走動。 */
+function initWalker() {
+  const [bx, by] = S.meta.base;
+  let pos = { x: bx, y: by };
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2, x = bx + Math.cos(a) * 24, y = by + Math.sin(a) * 24;
+    if (!isHazard(x, y)) { pos = { x, y }; break; }
+  }
+  const g = S.goal || { x: S.W / 2, y: S.H / 2 };
+  S.walk = { pos, heading: Math.atan2(g.y - pos.y, g.x - pos.x), blocked: false };
+  S.look = { yaw: 0, pitch: 0 };
+  astro.position.copy(groundV(pos.x, pos.y, 0));
+  astro.rotation.y = S.walk.heading;
+  astro.visible = S.view === '3d' && S.cam !== 'first';
+}
+
+/**
+ * 往前走一步。正前方是禁止通行區時，左右各試 30°、60° 沿著邊緣滑開，不會卡死；
+ * 已經站在危險格上（例如被漂移推進去）時允許走出來。回傳「正前方是否被擋」。
+ */
+function stepWalker(p, heading, fwd, dt) {
+  if (!fwd) return false;
+  const v = walkSpeed(p.x, p.y) * fwd * dt;
+  const stuck = isHazard(p.x, p.y);
+  const inside = (x, y) => x > 1 && y > 1 && x < S.W - 1 && y < S.H - 1;
+  let straight = true;
+  for (const da of [0, 0.5, -0.5, 1.0, -1.0]) {
+    const a = heading + da, k = da ? 0.8 : 1;
+    const nx = p.x + Math.cos(a) * v * k, ny = p.y + Math.sin(a) * v * k;
+    if (inside(nx, ny) && (stuck || !isHazard(nx, ny))) { p.x = nx; p.y = ny; return !straight; }
+    straight = false;
+  }
+  return true;
+}
+
+/** EVA 以外的自由走動（W/A/S/D、方向鍵、手機方向鍵）。 */
+function walkTick(dt) {
+  const w = S.walk;
+  if (!w || S.view !== '3d' || S.inGlobe) return;
+  let turn = 0, fwd = 0;
+  if (keys.has('ArrowLeft')) turn = 1;
+  if (keys.has('ArrowRight')) turn = -1;
+  if (keys.has('ArrowUp')) fwd = 1;
+  if (keys.has('ArrowDown')) fwd = -0.5;
+  w.heading += turn * 2.2 * dt;
+  w.blocked = stepWalker(w.pos, w.heading, fwd, dt) && fwd > 0;
+  astro.position.copy(groundV(w.pos.x, w.pos.y, 0));
+  astro.rotation.y = w.heading;
+}
+
+/** 第一人稱：眼睛高度看向前方；第三人稱：跟在背後、不鑽進地形。拖曳可以轉頭。 */
+const _eye = new THREE.Vector3(), _want = new THREE.Vector3();
+function followCamera(dt) {
+  if (!S.walk) return;
+  if (S.eva || keys.has('ArrowUp')) S.look.yaw *= Math.exp(-dt * 1.5); // 走路時視線慢慢回到正前方
+  const h = S.walk.heading + S.look.yaw, fx = Math.cos(h), fz = -Math.sin(h);
+  const b = astro.position;
+  if (S.cam === 'first') {
+    _eye.set(b.x, b.y + 4.4, b.z);
+    camera.position.copy(_eye);
+    const pitch = -0.1 + S.look.pitch;
+    camera.lookAt(_eye.x + fx * Math.cos(pitch) * 20, _eye.y + Math.sin(pitch) * 20, _eye.z + fz * Math.cos(pitch) * 20);
+    return;
+  }
+  const dist = 34, height = 14 - S.look.pitch * 40;
+  _want.set(b.x - fx * dist, b.y + height, b.z - fz * dist);
+  const g = fromV(_want), ground = groundV(g.x, g.y, 4).y;
+  if (_want.y < ground) _want.y = ground;
+  camera.position.lerp(_want, 1 - Math.exp(-dt * 6));
+  camera.lookAt(b.x, b.y + 4, b.z);
+}
+
+let lookPtr = null;
+renderer.domElement.addEventListener('pointerdown', (e) => (lookPtr = [e.clientX, e.clientY]));
+addEventListener('pointerup', () => (lookPtr = null));
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!lookPtr || S.view !== '3d' || S.inGlobe || S.cam === 'orbit') return;
+  const dx = e.clientX - lookPtr[0], dy = e.clientY - lookPtr[1];
+  lookPtr = [e.clientX, e.clientY];
+  S.look.yaw -= dx * 0.006;
+  S.look.pitch = Math.max(-0.6, Math.min(0.6, S.look.pitch - dy * 0.004));
 });
+
+function setCam(mode) {
+  S.cam = mode;
+  S.look = { yaw: 0, pitch: 0 };
+  perspectiveCamera.layers.set(0);
+  perspectiveCamera.layers.enable(mode === 'first' ? 2 : 3);
+  ['third', 'first', 'orbit'].forEach((m) => $(`cam-${m}`).classList.toggle('active', m === mode));
+  if (S.view === '3d' && !S.inGlobe) {
+    perspectiveControls.enabled = mode === 'orbit';
+    astro.visible = mode !== 'first';
+    if (mode === 'orbit') {
+      if (S.eva) {
+        const p = astro.position;
+        controls.target.copy(p);
+        camera.position.set(p.x - 300, p.y + 400, p.z + 500);
+      } else overviewCamera();
+    }
+  }
+  applyFog();
+  $('cam-hint').classList.toggle('hidden', mode === 'orbit');
+}
+
+function setTablet(up) {
+  S.tabletUp = up;
+  const t = $('tablet');
+  t.classList.toggle('raised', up);
+  t.classList.toggle('lowered', !up);
+  if (!up && document.activeElement && t.contains(document.activeElement)) document.activeElement.blur();
+  if (up && S.eva) $('step3').scrollIntoView({ block: 'start' }); // EVA 中：直接看到緊急按鈕
+  keys.clear();
+}
+
+// ---- 平板上的小地圖：同一個 3D 場景，用正上方的正交相機畫在平板的地圖區（north up）
+const miniCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 50000);
+miniCam.up.set(0, 0, -1);
+miniCam.layers.enable(1);
+const MINI_BG = new THREE.Color('#14100d');
+const flat = (g) => { g.rotateX(-Math.PI / 2); return g; };
+function miniMarker(geo, color) {
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true }));
+  m.layers.set(1);
+  m.renderOrder = 1000;
+  scene.add(m);
+  return m;
+}
+const miniMe = miniMarker(flat(new THREE.ShapeGeometry(new THREE.Shape([
+  new THREE.Vector2(0, 1), new THREE.Vector2(0.65, -0.75), new THREE.Vector2(0, -0.4), new THREE.Vector2(-0.65, -0.75),
+]))), '#ffffff');
+const miniGoal = miniMarker(flat(new THREE.RingGeometry(0.55, 1, 24)), '#ff7a3d');
+const miniBase = miniMarker(flat(new THREE.PlaneGeometry(1.4, 1.4)), '#3fd17a');
+const miniDefaultHalf = () => (S.eva ? 350 : Math.max(S.W, S.H) * 0.55);
+
+function renderMini() {
+  if (!S.tabletUp || S.view !== '3d' || S.inGlobe || !S.walk || !terrainMesh) return;
+  const r = $('tab-map').getBoundingClientRect();
+  if (r.width < 20 || r.height < 20) return;
+  const follow = S.eva || S.miniHalf !== null;
+  const half = S.miniHalf ?? miniDefaultHalf();
+  const c = follow ? astro.position : toV(S.W / 2, S.H / 2, S.zmid);
+  const aspect = r.width / r.height;
+  Object.assign(miniCam, { left: -half * aspect, right: half * aspect, top: half, bottom: -half });
+  miniCam.updateProjectionMatrix();
+  miniCam.position.set(c.x, 20000, c.z);
+  miniCam.lookAt(c.x, 0, c.z);
+  const k = half * 0.045;
+  miniMe.position.set(astro.position.x, astro.position.y + 50, astro.position.z);
+  miniMe.rotation.y = S.walk.heading - Math.PI / 2;
+  miniMe.scale.setScalar(k);
+  miniGoal.visible = !!S.goal;
+  if (S.goal) { miniGoal.position.copy(groundV(S.goal.x, S.goal.y, 50)); miniGoal.scale.setScalar(k * 0.9); }
+  miniBase.position.copy(groundV(S.meta.base[0], S.meta.base[1], 50));
+  miniBase.scale.setScalar(k * 0.8);
+  const fog = scene.fog, bg = scene.background;
+  scene.fog = null;
+  scene.background = MINI_BG;
+  const y = host.clientHeight - r.bottom;
+  renderer.setScissorTest(true);
+  renderer.setScissor(r.left, y, r.width, r.height);
+  renderer.setViewport(r.left, y, r.width, r.height);
+  renderer.render(scene, miniCam);
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, host.clientWidth, host.clientHeight);
+  scene.fog = fog;
+  scene.background = bg;
+}
+
+const tabMap = $('tab-map');
+let mapDown = null;
+tabMap.addEventListener('pointerdown', (e) => (mapDown = [e.clientX, e.clientY]));
+tabMap.addEventListener('pointerup', (e) => {
+  if (!mapDown || Math.hypot(e.clientX - mapDown[0], e.clientY - mapDown[1]) > 5 || S.eva) return;
+  const r = tabMap.getBoundingClientRect();
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), miniCam);
+  const hit = ray.intersectObject(terrainMesh)[0];
+  if (hit) setCustomGoal(fromV(hit.point));
+});
+tabMap.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const cur = S.miniHalf ?? miniDefaultHalf();
+  S.miniHalf = Math.max(60, Math.min(Math.max(S.W, S.H) * 0.8, cur * (e.deltaY > 0 ? 1.2 : 1 / 1.2)));
+}, { passive: false });
+tabMap.addEventListener('dblclick', () => (S.miniHalf = null));
+
+// ---- 平板閒置畫面：指南針 + 環境危險程度（顏色）+ 導航狀態
+let tabTimer = 0;
+const DIR8 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+function updateTabBar(dt) {
+  tabTimer += dt;
+  if (tabTimer < 0.12 || !S.walk) return;
+  tabTimer = 0;
+  const w = S.walk, e = S.eva;
+  const bearing = (((90 - (w.heading * 180) / Math.PI) % 360) + 360) % 360;
+  $('tb-ring').style.transform = `rotate(${-bearing}deg)`;
+  $('tb-heading').textContent = `${String(Math.round(bearing) % 360).padStart(3, '0')}° ${DIR8[Math.round(bearing / 45) % 8]}`;
+  // 腳下坡度 + 最近的禁止通行區（坡度 > 門檻或太粗糙）有多近
+  const p = w.pos;
+  let near = isHazard(p.x, p.y) ? 0 : Infinity;
+  for (const d of [5, 10, 20, 35]) {
+    if (near !== Infinity) break;
+    for (let k = 0; k < 12; k++) {
+      const a = (k / 12) * Math.PI * 2;
+      if (isHazard(p.x + Math.cos(a) * d, p.y + Math.sin(a) * d)) { near = d; break; }
+    }
+  }
+  const slope = slopeAt(p.x, p.y), blocked = e ? e.blocked : w.blocked;
+  const lvl = near <= 5 || blocked ? 'high' : near <= 20 || slope > 15 ? 'mid' : 'low';
+  const hz = $('tb-hazard');
+  hz.className = `tb-hazard ${lvl}`;
+  $('tb-haz-text').textContent = lvl === 'high' ? (near === 0 ? 'NO-GO' : 'HIGH') : lvl === 'mid' ? 'CAUTION' : 'LOW';
+  hz.title = `slope ${slope.toFixed(0)}° · nearest no-go ${Number.isFinite(near) ? `≤ ${near} m` : '> 35 m'}`;
+  const st = $('tb-status'), guide = $('tb-guide');
+  if (e) {
+    st.textContent = $('status-pill').textContent;
+    st.className = $('status-pill').className;
+    guide.innerHTML = $('compass-text').innerHTML.replace('<br>', ' · ');
+    $('tb-arrow').classList.remove('hidden');
+  } else {
+    st.className = '';
+    st.textContent = S.selected ? 'ROUTE READY' : 'FREE WALK';
+    guide.textContent = S.selected ? 'Tab / M — start the EVA on the tablet' : 'Tab / M — open Martian Map';
+    $('tb-arrow').classList.add('hidden');
+  }
+}
 
 // ---------------------------------------------------------------- boot
 async function boot() {
@@ -1048,6 +1319,12 @@ async function boot() {
   sel.onchange = pick;
   pick();
 
+  initWalker();
+  $('cam-third').onclick = () => setCam('third');
+  $('cam-first').onclick = () => setCam('first');
+  $('cam-orbit').onclick = () => setCam('orbit');
+  $('tab-bar').onclick = () => setTablet(!S.tabletUp);
+  setCam('third');
   $('plan').onclick = planRoutes;
   $('start').onclick = startEva;
   $('rockfall').onclick = rockfall;
@@ -1077,13 +1354,16 @@ async function boot() {
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
-  if (S.eva) evaTick(dt);
+  if (S.eva) { evaTick(dt); if (S.walk) S.walk.heading = S.eva.heading; } else walkTick(dt);
   wrapGlobalMap();
-  controls.update();
+  if (S.view === '3d' && !S.inGlobe && S.cam !== 'orbit') followCamera(dt);
+  else controls.update();
   // 拉遠時隱藏 3D 標籤，避免全部擠在一起
-  labels.domElement.style.display = S.inGlobe || (S.view === '3d' && camera.position.distanceTo(controls.target) > 9000) ? 'none' : '';
+  labels.domElement.style.display = S.inGlobe || (S.view === '3d' && S.cam === 'orbit' && camera.position.distanceTo(controls.target) > 9000) ? 'none' : '';
   renderer.render(scene, camera);
   labels.render(scene, camera);
+  renderMini();
+  updateTabBar(dt);
 });
 boot().catch((e) => { $('loading-text').textContent = `Failed to load: ${e.message}`; console.error(e); });
 

@@ -17,17 +17,27 @@
     <!-- 第一次使用的說明 -->
     <div id="intro" class="hidden">
       <div class="intro-card">
-        <h2>Plan a safe Marswalk in 3 steps</h2>
+        <h2>You are an astronaut on Mount Sharp</h2>
+        <p>The ground is real NASA HiRISE terrain. Walk with <b>W A S D</b> or the arrow keys, drag to look around, <b>V</b> switches first / third person.</p>
+        <p>The tablet in your hands is <b>Martian Map</b>. Idle, it shows a compass and how dangerous the ground is. Press <b>Tab</b> or <b>M</b> to raise it:</p>
         <ol>
-          <li><b>Pick where to go</b> — a science stop on real NASA HiRISE terrain of Mount Sharp.</li>
-          <li><b>Pick a route</b> — the planner compares a safe, a balanced and a science route.</li>
-          <li><b>Go on EVA</b> — walk the astronaut (W/A/S/D) or use autopilot, then try an emergency.</li>
+          <li><b>Pick where to go</b> — a science stop, or click its map.</li>
+          <li><b>Pick a route</b> — safe, balanced or science.</li>
+          <li><b>Go on EVA</b> — walk it yourself or use autopilot, then try an emergency.</li>
         </ol>
         <p class="hint">Everything runs inside this browser — no network link to Earth needed.</p>
         <button id="intro-ok" class="primary">Start</button>
       </div>
     </div>
 
+    <div id="tablet" class="lowered">
+      <div class="tab-bar" id="tab-bar" title="Tab / M — raise or lower the tablet">
+        <div class="tb-compass"><div id="tb-dial"><div id="tb-ring"><span class="cn">N</span><span class="ce">E</span><span class="cs">S</span><span class="cw">W</span></div></div><div id="tb-heading">000° N</div></div>
+        <div class="tb-mid"><div id="tb-status">FREE WALK</div><div id="tb-guide">Tab / M — open Martian Map</div></div>
+        <div id="tb-arrow" class="hidden">▲</div>
+        <div class="tb-hazard" id="tb-hazard"><span>Terrain danger</span><b id="tb-haz-text">—</b></div>
+      </div>
+      <div class="tab-body">
     <aside id="panel">
       <header>
         <h1>MARTIAN MAP</h1>
@@ -35,10 +45,16 @@
         <div class="badge" id="badge">● OFFLINE · ON-BOARD COMPUTE</div>
       </header>
 
+      <div class="cam-row" role="group" aria-label="Camera">
+        <button id="cam-third" type="button" class="view-button active">3rd person</button>
+        <button id="cam-first" type="button" class="view-button">1st person</button>
+        <button id="cam-orbit" type="button" class="view-button">Overview</button>
+      </div>
+
       <section class="step" id="step1">
         <div class="step-title"><span class="num">1</span> Where to?</div>
         <select id="target"></select>
-        <div class="hint">…or click anywhere on the terrain.</div>
+        <div class="hint">…or click the map on the right (wheel to zoom, double-click to reset).</div>
         <div id="target-desc" class="desc"></div>
       </section>
 
@@ -52,7 +68,7 @@
         <div class="step-title"><span class="num">3</span> Go on EVA</div>
         <button id="start" class="primary" disabled>▶ Start EVA</button>
         <label class="check"><input type="checkbox" id="autopilot" checked /> Autopilot (walk the route for me)</label>
-        <div class="hint">Manual: W / ↑ forward · A D / ← → turn · S / ↓ back · drag to look around</div>
+        <div class="hint">Lower the tablet (Tab / M) to watch. Manual: W / ↑ forward · A D / ← → turn · S / ↓ back · drag to look</div>
         <div id="emergency" class="hidden">
           <div class="sub-title">Try an emergency</div>
           <div class="row">
@@ -114,6 +130,8 @@
         <footer id="source"></footer>
       </details>
     </aside>
+    <div class="tab-right">
+      <div id="tab-map"><div class="map-note">Martian Map · on-board · north up</div></div>
 
     <!-- EVA heads-up display -->
     <div id="hud" class="hidden">
@@ -129,8 +147,13 @@
       </div>
       <div id="haptic" class="haptic idle">📳 quiet — on route</div>
     </div>
+    </div>
+      </div>
+    </div>
 
-    <div id="dpad" class="hidden">
+    <div id="cam-hint">W A S D walk · drag look · <b>Tab / M</b> tablet · <b>V</b> 1st / 3rd person</div>
+
+    <div id="dpad">
       <button data-k="ArrowUp">▲</button>
       <button data-k="ArrowLeft">◀</button>
       <button data-k="ArrowDown">▼</button>
