@@ -27,4 +27,6 @@ NASA Space Apps 規定提交時必須完整揭露 AI（官方稱 Super Intellige
 | 11/14 | Claude Code | 執行建立私人 GitHub repo、邀請組員的指令 | 決定帳號、repo 設定、邀請對象 |
 | 11/14 | Claude Code | 依台灣評審公告調整分工，建立本紀錄檔 | 提出調整要求和分工原則 |
 
+| 11/14 | Claude Code | 產生 `cost.rs` 骨架：型別、函式簽名、引導問題、3 個標成 ignore 的測試（不含權重和實作） | 權重、門檻、危險遮罩、科學價值場、成本圖由團隊實作 |
+
 <!-- 之後每一步都往下新增一列 -->

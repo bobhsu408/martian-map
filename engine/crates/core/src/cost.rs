@@ -1,0 +1,176 @@
+//! 懲罰成本圖（B6）—— **由團隊實作**。本檔只有骨架、提示和測試（AI 提供）。
+//!
+//! 概念：每一格有一個「走過去的代價」，A* 會找總代價最小的路線。
+//! - 硬限制：危險格的代價 = ∞，A* 絕對不會走。
+//! - 軟懲罰：可以走但比較「貴」，A* 會盡量繞開。
+//!
+//! 計畫中的公式（docs/PLAN.md「核心演算法規格」）：
+//! ```text
+//! cost = 1 + W_slope·(slope/slope_max)² + W_rough·rough_norm
+//!          + W_buf·exp(-d/σ)  − W_sci·science      （下限 min_cost）
+//! hazard 格 → ∞
+//! ```
+//!
+//! 完成後：把每個測試的 `#[ignore]` 拿掉，跑 `cargo test -p mars-core cost`。
+
+use crate::grid::Grid;
+use crate::world::World;
+use serde::Deserialize;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    Safe,
+    Balanced,
+    Science,
+}
+
+/// 一種模式的權重。數值由團隊決定，並在簡報中說明理由。
+#[derive(Clone, Copy, Debug)]
+pub struct CostWeights {
+    /// 坡度懲罰權重
+    pub w_slope: f32,
+    /// 粗糙度懲罰權重
+    pub w_rough: f32,
+    /// 危險區緩衝懲罰權重
+    pub w_buf: f32,
+    /// 緩衝距離尺度 σ（公尺）：離危險區 σ 公尺時，緩衝懲罰剩 e⁻¹ ≈ 37%
+    pub sigma_m: f32,
+    /// 科學獎勵權重（越大越願意靠近科學目標）
+    pub w_sci: f32,
+    /// 成本下限（必須 > 0，A* 的啟發函數靠它保證最佳解）
+    pub min_cost: f32,
+}
+
+impl CostWeights {
+    /// TODO(團隊)：決定三種模式的權重。
+    ///
+    /// 思考問題：
+    /// - safe 和 science 最主要的差別應該在哪幾個權重？
+    /// - σ 要多大？穿太空衣的人跌倒滑行可能多遠？距離懸崖幾公尺你會覺得安心？
+    /// - w_sci 太大會怎樣？（提示：成本可能被扣到很低，路線會為了科學點冒險）
+    /// - min_cost 若設成 0，A* 的啟發函數會變成什麼？還能保證找到最佳解嗎？
+    pub fn for_mode(mode: Mode) -> Self {
+        let _ = mode;
+        todo!("B6：由團隊決定三種模式的權重")
+    }
+}
+
+/// 危險區門檻。由團隊決定並說明依據。
+#[derive(Clone, Copy, Debug)]
+pub struct HazardThresholds {
+    /// 超過此坡度視為不可通行（度）
+    pub slope_max_deg: f32,
+    /// 超過此粗糙度視為岩塊、不可通行（公尺）
+    pub rough_max_m: f32,
+}
+
+/// TODO(團隊)：產生危險遮罩（true = 不可通行）。
+///
+/// 提示：
+/// - 逐格比較 `slope`、`rough` 和門檻；`Grid::map` 只能處理一張圖，兩張圖可以用
+///   `slope.data.iter().zip(&rough.data)` 一起走。
+/// - 用 `Grid::from_vec(w, h, cell_m, data)` 組回網格。
+/// - 思考：25° 這個數字從哪來？粗糙度門檻要怎麼對應「一顆跨不過去的石頭」？
+pub fn hazard_mask(slope: &Grid<f32>, rough: &Grid<f32>, th: HazardThresholds) -> Grid<bool> {
+    let _ = (slope, rough, th);
+    todo!("B6：危險遮罩")
+}
+
+/// TODO(團隊)：科學價值場（0–1）：靠近科學目標的格子分數高。
+///
+/// 提示：
+/// - 對每個 `world.targets`，用高斯函數 `science · exp(-d² / (2·r²))`，d 是格子中心到目標的距離。
+/// - 多個目標重疊時取最大值（max）還是相加（sum）？各有什麼意義？
+/// - r（影響半徑）要多大？boxwork 區域本身大約有多大？
+/// - 效能：只需要處理目標周圍約 3r 範圍內的格子。
+pub fn science_field(world: &World, radius_m: f32) -> Grid<f32> {
+    let _ = (world, radius_m);
+    todo!("B6：科學價值場")
+}
+
+/// 計算成本圖需要的所有輸入圖層（皆與 DEM 同尺寸）。
+pub struct CostInputs<'a> {
+    pub slope: &'a Grid<f32>,
+    pub rough: &'a Grid<f32>,
+    pub hazard: &'a Grid<bool>,
+    /// 到最近危險格的距離（公尺），用 `edt::distance_to(hazard)` 算
+    pub clearance: &'a Grid<f32>,
+    /// 科學價值 0–1
+    pub science: &'a Grid<f32>,
+    pub slope_max_deg: f32,
+    /// 粗糙度正規化用的尺度（公尺）
+    pub rough_scale_m: f32,
+}
+
+/// TODO(團隊)：依公式計算每格成本；hazard 格為 `f32::INFINITY`。
+///
+/// 提示：
+/// - 公式見檔案開頭；記得 `.max(w.min_cost)` 套用下限。
+/// - 想用多核心的話：`use rayon::prelude::*;` 再把 `.iter()` 換成 `.par_iter()`。
+/// - 寫完後印出 safe 和 science 兩張成本圖的統計（最小、最大、平均），檢查數值範圍合不合理。
+pub fn cost_map(inp: &CostInputs, w: &CostWeights) -> Grid<f32> {
+    let _ = (inp, w);
+    todo!("B6：成本圖")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::edt::distance_to;
+
+    /// 測試用的小場景：平地，中間一格 30° 陡坡。
+    fn tiny() -> (Grid<f32>, Grid<f32>) {
+        let mut slope = Grid::new(21, 21, 1.0, 0.0f32);
+        slope.set(10, 10, 30.0);
+        let rough = Grid::new(21, 21, 1.0, 0.0f32);
+        (slope, rough)
+    }
+
+    #[test]
+    #[ignore = "B6：團隊實作 hazard_mask 後移除"]
+    fn steep_cell_is_hazard() {
+        let (slope, rough) = tiny();
+        let hz = hazard_mask(&slope, &rough, HazardThresholds { slope_max_deg: 25.0, rough_max_m: 1.0 });
+        assert!(hz.get(10, 10));
+        assert!(!hz.get(0, 0));
+    }
+
+    #[test]
+    #[ignore = "B6：團隊實作 cost_map 後移除"]
+    fn hazard_is_infinite_and_cost_decreases_with_distance() {
+        let (slope, rough) = tiny();
+        let hz = hazard_mask(&slope, &rough, HazardThresholds { slope_max_deg: 25.0, rough_max_m: 1.0 });
+        let clr = distance_to(&hz);
+        let sci = Grid::new(21, 21, 1.0, 0.0f32);
+        let inp = CostInputs {
+            slope: &slope,
+            rough: &rough,
+            hazard: &hz,
+            clearance: &clr,
+            science: &sci,
+            slope_max_deg: 25.0,
+            rough_scale_m: 1.0,
+        };
+        let c = cost_map(&inp, &CostWeights::for_mode(Mode::Safe));
+        assert!(c.get(10, 10).is_infinite());
+        // 沿著一列往外走，成本應該單調不增（離危險越遠越便宜）
+        for i in 11..20 {
+            assert!(c.get(i + 1, 10) <= c.get(i, 10), "cost should not increase away from hazard at i={i}");
+        }
+    }
+
+    #[test]
+    #[ignore = "B6：團隊決定權重後移除"]
+    fn modes_are_ordered_sensibly() {
+        let (s, b, sc) = (CostWeights::for_mode(Mode::Safe), CostWeights::for_mode(Mode::Balanced), CostWeights::for_mode(Mode::Science));
+        assert!(s.w_buf >= b.w_buf && b.w_buf >= sc.w_buf, "safe 應該最重視緩衝");
+        assert!(sc.w_sci >= b.w_sci && b.w_sci >= s.w_sci, "science 應該最重視科學");
+        for w in [s, b, sc] {
+            assert!(w.min_cost > 0.0, "min_cost 必須 > 0");
+            assert!(w.sigma_m > 0.0);
+        }
+    }
+
+    // TODO(團隊)：自己加一個測試情境，例如「科學目標旁邊的格子成本比遠處低」。
+}
