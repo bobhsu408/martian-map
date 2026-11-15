@@ -58,4 +58,5 @@ NASA Space Apps 規定提交時必須完整揭露 AI（官方稱 Super Intellige
 | 2026-11-15 19:30 | Claude Code (Claude Opus 5.5) | 新手高亮導覽 web/src/tour.js（聚光燈＋說明卡，5 步：舉起平板→選目標→規劃路線→看三條路線→告知可移動；使用者實際操作才前進、可略過、可從 ? 重播、中英文）；main.js 掛 3 個事件、style.css 樣式；新增 tools/e2e_tour.mjs 中英文實測通過 | 隊長決定加入導覽並定義流程：到成功規劃路線、告訴使用者可以移動為止；要求在新分支開發 |
 | 2026-11-15 19:55 | Claude Code (Claude Opus 5.5) | 公開前掃描 repo 敏感資料（無）；撰寫 GitHub Pages 部署 workflow 並啟用 Pages；以線上網址跑 e2e（規劃、EVA、落石、導覽）通過；把 Demo／Repo 網址填入 SUBMISSION.md | 隊長決定公開 repo 並自行執行合併與公開設定 |
 | 2026-11-15 20:05 | Claude Code (Claude Opus 5.5) | 全專案檢查（Rust 測試、本機／線上 e2e、敏感資料、SI 標記）；為 8 個缺標記的 AI 產生檔案補上標記；修正 e2e_shots 腳本；依本紀錄起草 SUBMISSION.md 的 Use of SI 段落（註明 AI 起草、待團隊審閱）；撰寫開發日誌 docs/DEVLOG.md 並附 app 實際截圖 | 隊長要求完成 SI 段落與全專案檢查並整理開發日誌；團隊需審閱 SI 段落 |
+| 2026-11-15 20:15 | Claude Code (Claude Opus 5.5) | 將大會中文說明 PDF 壓縮檔移出公開 repo（保留本機、加入 .gitignore），更新開發日誌 | 隊長決定移除 |
 <!-- 之後每一步都往下新增一列 -->

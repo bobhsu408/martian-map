@@ -119,7 +119,7 @@ flowchart LR
 
 1. **SI 段落請過目**：特別確認Yi-Fan那邊除了 Codex 有沒有用其他工具（例如分支名稱裡的 Antigravity），有的話要補上。
 2. **`docs/DATA_CATALOG.md` 是否由 AI 產生**：紀錄裡看不出來。是的話要加標記。
-3. **`docs/drive-download-…zip`**：裡面是大會給的中文說明 PDF，現在跟著 repo 公開了。建議從 repo 移除（只放在本機）。
+3. ~~**`docs/drive-download-…zip`**（大會給的中文說明 PDF）~~：✅ 已從 repo 移除，只留在本機，並加進 `.gitignore`。舊的 commit 歷史裡仍然找得到。
 4. **畫面上可能讓評審困惑的地方**：頂欄寫「TERRAIN DANGER LOW」，但路線風險顯示 78%。前者指腳下，後者指整條路線，可以改成「Terrain here: LOW」。
 5. **Demo 影片**（Yi-Fan）：可以照著導覽的流程拍，最後放落石或氧氣外洩的畫面。
 6. **送出**：建議 22:00 前在官網送出，附上 Demo 和 Repo 網址。

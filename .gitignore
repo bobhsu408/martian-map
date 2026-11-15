@@ -11,3 +11,6 @@ data/raw/
 # OS
 .DS_Store
 __pycache__/
+
+# Organizer guideline PDFs: keep local only, not for redistribution
+docs/drive-download-*.zip
