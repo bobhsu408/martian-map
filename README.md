@@ -12,6 +12,7 @@ NASA Space Apps Challenge 2026 · Challenge: *Interplanetary Survival Guide: Mar
 ## Contents
 
 - [Why](#why)
+- [30-second project video](#30-second-project-video)
 - [Screenshots](#screenshots)
 - [How to use it](#how-to-use-it)
 - [Features](#features)
@@ -27,6 +28,10 @@ NASA Space Apps Challenge 2026 · Challenge: *Interplanetary Survival Guide: Mar
 ## Why
 
 On a Mars walk, the questions are local and urgent: is the next stretch of ground safe, and is there enough oxygen to get back? A message to Earth takes 4 to 24 minutes, and there is no GPS. Mars EVA Planner answers these questions on the astronaut's own device, using a HiRISE terrain model of Mount Sharp in Gale crater.
+
+## 30-second project video
+
+[Watch the 30-second project introduction](assets/NASA.mp4).
 
 ## Screenshots
 
