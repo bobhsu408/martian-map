@@ -61,4 +61,5 @@ NASA Space Apps 規定提交時必須完整揭露 AI（官方稱 Super Intellige
 | 2026-11-15 20:05 | Claude Code (Claude Opus 5.5) | 全專案檢查（Rust 測試、本機／線上 e2e、敏感資料、SI 標記）；為 8 個缺標記的 AI 產生檔案補上標記；修正 e2e_shots 腳本；依本紀錄起草 SUBMISSION.md 的 Use of SI 段落（註明 AI 起草、待團隊審閱）；撰寫開發日誌 docs/DEVLOG.md 並附 app 實際截圖 | 隊長要求完成 SI 段落與全專案檢查並整理開發日誌；團隊需審閱 SI 段落 |
 | 2026-11-15 20:15 | Claude Code (Claude Opus 5.5) | 將大會中文說明 PDF 壓縮檔移出公開 repo（保留本機、加入 .gitignore），更新開發日誌 | 隊長決定移除 |
 
+| 2026-11-15 22:00 | Claude Code (Claude Opus 5.5) | 對照大會提交 checklist 檢查：README 改為英文版（中文版移到 docs/README.zh.md 並修正連結），修正英文 README 的 HiRISE 地點編號與 Team、補齊 SI 工具；SUBMISSION.md SI 段落補上 Antigravity、ChatGPT、Google Translate、Grammarly | 組員補齊 SI 紀錄後，隊長要求確認提交前還缺哪些資料 |
 <!-- 之後每一步都往下新增一列 -->

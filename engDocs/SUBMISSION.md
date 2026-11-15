@@ -106,6 +106,8 @@ We used SI tools heavily, and we kept a log of every step (`docs/AI_USAGE.md` in
 - **Claude Code (Anthropic)** wrote most of the code: the Rust route-planning engine, its WebAssembly build, the Three.js interface, the onboarding tour, the automated tests and the deployment setup. It also drafted documentation and this submission text.
 - **Codex (OpenAI)** explained the tech stack to one of us, researched which Mars map data to use, wrote the Python tools that preprocess the NASA data, built the zoomable 2D map, and rebuilt the tablet interface from reference designs we chose.
 - **Hermes Agent** (a free local model) drafted the first README from an outline we gave it.
+- **Antigravity AI** read our interface and proposed a tablet redesign plan from four reference images we chose. Codex finished the work.
+- **ChatGPT, Google Translate and Grammarly** helped translate our notes and logs into English and polish the wording. We checked the translations.
 
 **What we did ourselves**
 - We chose the problem, the site (Mount Sharp, Gale crater) and the idea of a fully offline EVA tablet.
