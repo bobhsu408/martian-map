@@ -56,4 +56,5 @@ NASA Space Apps 規定提交時必須完整揭露 AI（官方稱 Super Intellige
 | 2026-11-15 | Codex | 調整 3D EVA 操作說明卡，將標題列改為可收合控制；修正按鈕樣式造成的標題列高度、內距與圖示排列問題；新增平板 Sites & Beacons 清單與場景標記，讓 Habitat、Rover、Relay、UWB、Science Stop 以場景座標錨定並依距離／點選顯示標籤；補充 2D 地圖中鍵拖曳平移、Hazards／PNR 網格圖樣，以及 Map Layers 面板相關介面調整 | 使用者指定標記種類與顯示方式，要求不加常駐 3D 側欄、Rover 不新增模型、標籤依距離或點選顯示，並要求圖示錨定 Three.js 實際座標；指出操作說明標題列變形並要求修正；要求恢復不需要的 Map Layers 面板配置；要求隱去介面上的 NASA 字樣。以上介面變更曾執行 `npm run build`，建置成功；未完成瀏覽器互動實測 |
 | 2026-11-15 18:45 | Claude Code (Claude Opus 5.5) | 整合組員 Antigravity-UI-development（新版平板 UI）與 map-development（SI 紀錄英譯）進 main；修正 e2e 腳本（先選目標再規劃），以瀏覽器實測規劃→EVA→落石重規劃全流程、無頁面錯誤 | 隊長要求繼續開發計劃並整理 GitHub 紀錄；UI 設計與實作為組員（Codex 協助）完成 |
 | 2026-11-15 19:30 | Claude Code (Claude Opus 5.5) | 新手高亮導覽 web/src/tour.js（聚光燈＋說明卡，5 步：舉起平板→選目標→規劃路線→看三條路線→告知可移動；使用者實際操作才前進、可略過、可從 ? 重播、中英文）；main.js 掛 3 個事件、style.css 樣式；新增 tools/e2e_tour.mjs 中英文實測通過 | 隊長決定加入導覽並定義流程：到成功規劃路線、告訴使用者可以移動為止；要求在新分支開發 |
+| 2026-11-15 19:55 | Claude Code (Claude Opus 5.5) | 公開前掃描 repo 敏感資料（無）；撰寫 GitHub Pages 部署 workflow 並啟用 Pages；以線上網址跑 e2e（規劃、EVA、落石、導覽）通過；把 Demo／Repo 網址填入 SUBMISSION.md | 隊長決定公開 repo 並自行執行合併與公開設定 |
 <!-- 之後每一步都往下新增一列 -->

@@ -3,8 +3,8 @@
 
 Challenge: **Interplanetary Survival Guide: Martian Map**
 Team: It Worked on Earth!!! (YI-FAN YU, PO-TING HSU)
-Demo (runs in the browser, no install): TODO — GitHub Pages link
-Repository: TODO — public GitHub link
+Demo (runs in the browser, no install): https://bobhsu408.github.io/martian-map/
+Repository: https://github.com/bobhsu408/martian-map
 
 ---
 
