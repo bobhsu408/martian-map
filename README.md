@@ -77,6 +77,10 @@ Details: [docs/DATA_CATALOG.md](docs/DATA_CATALOG.md).
 - Every file written or assisted by SI says so on its first line (`SI-generated` or `SI-assisted`). We used no SI-generated images, video or audio.
 - Full step-by-step log: [engDocs/SI_usage.md](engDocs/SI_usage.md) (English) and [docs/AI_USAGE.md](docs/AI_USAGE.md) (Chinese).
 
+## Team
+
+**It Worked on Earth!!!**: YI-FAN YU, PO-TING HSU
+
 ## More
 
 - Submission text: [engDocs/SUBMISSION.md](engDocs/SUBMISSION.md)
