@@ -19,7 +19,7 @@
       <div class="intro-card">
         <button class="lang-btn" type="button">中文</button>
         <h2>You are an astronaut on Mount Sharp</h2>
-        <p>The ground is real NASA HiRISE terrain. Walk with <b>W A S D</b> or the arrow keys, drag to look around, <b>V</b> switches first / third person.</p>
+        <p>The ground uses high-resolution orbital terrain data. Walk with <b>W A S D</b> or the arrow keys, drag to look around, <b>V</b> switches first / third person.</p>
         <p>The tablet in your hands is <b>Martian Map</b>. Idle, it shows a compass and how dangerous the ground is. Press <b>Tab</b> or <b>M</b> to raise it:</p>
         <ol>
           <li><b>Pick where to go</b> — a science stop, or click its map.</li>
@@ -161,8 +161,14 @@
             <div class="more-pane active" id="tab-layers">
               <h3>Map Layers</h3>
               <p class="pane-desc">Overlay terrain and mission information on the map.</p>
-              <div id="layers"></div>
-              <div id="legend-box"></div>
+              <div id="layers" class="layer-controls"></div>
+              <section class="layer-inspector" aria-live="polite">
+                <div class="layer-detail-tabs" role="tablist" aria-label="Selected layer detail">
+                  <button class="layer-detail-tab active" type="button" data-layer-detail="info" role="tab" aria-selected="true">ⓘ Layer Info</button>
+                  <button class="layer-detail-tab" type="button" data-layer-detail="legend" role="tab" aria-selected="false">◉ Legend (Color Meaning)</button>
+                </div>
+                <div id="layer-inspector-content"></div>
+              </section>
             </div>
             <!-- View -->
             <div class="more-pane" id="tab-view">
@@ -196,7 +202,7 @@
             <div class="more-pane" id="tab-vdist">
               <h3>View Distance <span id="vd-text"></span></h3>
               <input type="range" id="view-dist" min="0" max="6" step="1" value="2" />
-              <div class="hint">Far views show the whole Gale crater (NASA MOLA, 463 m).</div>
+              <div class="hint">Far views show the whole Gale crater (global elevation model, 463 m).</div>
             </div>
             <!-- Sound & Vibration -->
             <div class="more-pane" id="tab-feedback">

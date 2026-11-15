@@ -44,7 +44,7 @@ const EXACT = {
   'Drag to pan · wheel to zoom · Gale MOC context': '拖曳平移 · 滾輪縮放 · Gale MOC 區域圖',
   '🌍 Mars globe (3D)': '🌍 火星地球儀（3D）', '🌍 Mars globe (MOLA)': '🌍 火星地球儀（MOLA）', '⤶ Back to EVA site': '⤶ 回到 EVA 現場',
   'View distance': '視距',
-  'Far views show the whole Gale crater (NASA MOLA, 463 m).': '拉遠可看到整個 Gale 撞擊坑（NASA MOLA，463 m）。',
+  'Far views show the whole Gale crater (global elevation model, 463 m).': '拉遠可看到整個 Gale 撞擊坑（全球高程模型，463 m）。',
   'Guidance feedback': '導航回饋', '🔊 Sound': '🔊 聲音', '📳 Vibration': '📳 震動',
   '1 pulse = steer left · 2 pulses = steer right · faster = further off route · long buzz = hazard · SOS = return now':
     '震 1 下 = 往左修正 · 震 2 下 = 往右修正 · 越快 = 偏越遠 · 長震 = 危險 · SOS = 立刻返航',
@@ -76,10 +76,21 @@ const EXACT = {
   'Reset': '已重設', 'straight ahead': '直走',
   'Slope (°)': '坡度（°）', 'Penalty cost — safe': '懲罰成本 — 安全', 'Penalty cost — science': '懲罰成本 — 科學',
   'Beacon coverage': '信標覆蓋', 'Point-of-no-return zone': '不歸點範圍', 'Hazards (no-go)': '危險區（禁區）',
+  'Layer Info': '圖層說明', 'Legend (Color Meaning)': '圖例（顏色意義）', 'Color meaning for this layer.': '這個圖層的顏色意義。',
+  'Terrain steepness. Higher values indicate steeper, more difficult ground.': '地形坡度。數值越高，地面越陡、越難通行。',
+  'The travel cost used by the Safe route. It favors wider clearance from hazards and difficult ground.': '安全路線使用的通行成本。它偏好遠離危險與困難地形的區域。',
+  'The travel cost used by the Science route. It accepts more difficult terrain when it improves access to science targets.': '科學路線使用的通行成本。為了抵達科學目標時，會接受較困難的地形。',
+  'The number of usable beacons visible from each point. More coverage supports a more accurate position fix.': '每個位置可見的可用信標數量。覆蓋越多，定位通常越準確。',
+  'An EVA-only estimate of where the crew can still reach and return from within the current oxygen budget.': '僅在 EVA 中估計：在目前氧氣預算內，太空人仍可抵達並返回的位置。',
+  'Terrain that exceeds the project slope or roughness safety thresholds and cannot be crossed by route planning.': '超過專案坡度或粗糙度安全門檻的地形，路徑規劃不會穿越。',
+  'Visible on the map.': '正在地圖上顯示。', 'Hidden until its checkbox is enabled.': '勾選後才會顯示在地圖上。',
+  'lower cost': '較低成本', 'moderate cost': '中等成本', 'high cost': '較高成本',
+  '0° flat': '0° 平緩', '10° moderate': '10° 中等', '20° steep': '20° 較陡', '≥25° very steep': '≥25° 非常陡',
+  '1–2 beacons': '1–2 個信標', '3+ beacons': '3+ 個信標',
   'cheap': '低', 'expensive': '高', '0 beacons': '0 個信標', 'beyond PNR': '超過不歸點', 'safe to reach & return': '可安全往返',
   'passable': '可通行', 'no-go': '禁區',
-  'Globe view: NASA MOLA topography, 12× vertical exaggeration; the blue pin marks the EVA site in Gale crater':
-    '地球儀：NASA MOLA 地形，垂直誇大 12 倍；藍色圖釘是 Gale 撞擊坑裡的 EVA 現場',
+  'Globe view: global elevation model, 12× vertical exaggeration; the blue pin marks the EVA site in Gale crater':
+    '地球儀：全球高程模型，垂直誇大 12 倍；藍色圖釘是 Gale 撞擊坑裡的 EVA 現場',
   'Too close to the last beacon — walk at least 15 m apart so the beacons spread out': '離上一個信標太近 — 至少走開 15 m，讓信標分散開來',
   'Turn back in': '回頭倒數', 'TURN BACK NOW': '立刻回頭', 'HEADING HOME': '返航中', 'NOW': '現在',
   'Minutes you can keep going out before you must turn back (O₂ left − return time − reserve)': '還能往外走幾分鐘才必須回頭（剩餘 O₂ − 回程時間 − 安全預留）',
@@ -102,8 +113,8 @@ const PATTERNS = [
   [/^No-go thresholds: slope > (\d+)°, roughness > ([\d.]+) m\.$/, (m) => `禁區門檻：坡度 > ${m[1]}°、粗糙度 > ${m[2]} m。`],
   [/^Engine: WebAssembly in this browser — no network link required\.$/, () => '引擎：在這個瀏覽器裡執行 WebAssembly — 不需要網路連線。'],
   [/^Engine: local mars-server — no network link required\.$/, () => '引擎：本機 mars-server — 不需要網路連線。'],
-  [/^(Regional context: NASA MGS MOLA 463 m \(Gale crater\)\. )?Gale regional image: NASA MGS MOC Atlas 256 px\/deg\. Beacon ranges are simulated from the terrain model; science stops are auto-selected candidates\.$/,
-    (m) => `${m[1] ? '區域脈絡：NASA MGS MOLA 463 m（Gale 撞擊坑）。' : ''}Gale 區域影像：NASA MGS MOC Atlas 256 px/度。信標測距是依地形模型模擬；科學點是自動挑選的候選點。`],
+  [/^(Regional context: global elevation model, 463 m \(Gale crater\)\. )?Gale regional image: orbital image mosaic, 256 px\/deg\. Beacon ranges are simulated from the terrain model; science stops are auto-selected candidates\.$/,
+    (m) => `${m[1] ? '區域脈絡：全球高程模型，463 m（Gale 撞擊坑）。' : ''}Gale 區域影像：軌道影像鑲嵌圖，256 px/度。信標測距是依地形模型模擬；科學點是自動挑選的候選點。`],
   [/^Science stop ([A-C]) — textured bedrock(.*)$/, (m) => `科學點 ${m[1]} — 紋理基岩${tr(m[2]) ?? m[2]}`],
   [/^ \(science (.+)\)$/, (m) => `（科學值 ${m[1]}）`],
   [/^(.*) \(science ([\d.]+)\)$/, (m) => `${tr(m[1]) ?? m[1]}（科學值 ${m[2]}）`],
@@ -153,7 +164,7 @@ const PATTERNS = [
 
 // 整段含 HTML 標籤的區塊，直接整段替換
 const BLOCKS = {
-  '#intro .intro-card p:nth-of-type(1)': '地面是真實的 NASA HiRISE 地形。用 <b>W A S D</b> 或方向鍵走路，拖曳滑鼠看四周，<b>V</b> 切換第一／第三人稱。',
+  '#intro .intro-card p:nth-of-type(1)': '地面使用高解析度軌道地形資料。用 <b>W A S D</b> 或方向鍵走路，拖曳滑鼠看四周，<b>V</b> 切換第一／第三人稱。',
   '#intro .intro-card p:nth-of-type(2)': '你手上的平板就是 <b>Martian Map</b>。平時顯示指南針和地面危險度，按 <b>Tab</b> 或 <b>M</b> 舉起平板：',
   '#intro ol': '<li><b>選擇目的地</b> — 科學點，或直接點地圖。</li><li><b>選擇路線</b> — 安全、平衡或科學。</li><li><b>出艙 EVA</b> — 自己走或用自動導航，再試試緊急狀況。</li>',
   '#intro .hint': '所有運算都在這個瀏覽器裡完成 — 不需要和地球連線。',

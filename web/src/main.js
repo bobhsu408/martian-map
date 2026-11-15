@@ -131,6 +131,7 @@ const slopeAt = (x, y) => ((cellVal(S.slope, x, y) ?? 0) / 254) * 45;
 
 // ---------------------------------------------------------------- terrain + layers
 let terrainMesh, mapMesh, regionalMesh, baseColors, rockMesh;
+const mapPatternOverlays = {};
 const globalMapMeshes = [];
 function buildTerrain() {
   const { w, h, data } = S.terr;
@@ -163,6 +164,69 @@ function buildTerrain() {
   mapMesh.position.set((bounds.west + bounds.east) / 2 - 180, 0.01, -(bounds.south + bounds.north) / 2);
   mapMesh.visible = false;
   scene.add(mapMesh);
+}
+
+// Pattern overlays are derived from the same live grids as the coloured layers.
+// They add an unmistakable no-go hatch / return boundary only in the 2D map.
+function patternTexture(grid, kind) {
+  const canvas = document.createElement('canvas');
+  canvas.width = grid.w; canvas.height = grid.h;
+  const ctx = canvas.getContext('2d');
+  const image = ctx.createImageData(grid.w, grid.h);
+  const pixel = (x, y, r, g, b, a) => {
+    const k = (y * grid.w + x) * 4;
+    image.data[k] = r; image.data[k + 1] = g; image.data[k + 2] = b; image.data[k + 3] = a;
+  };
+  const active = (x, y) => {
+    if (x < 0 || y < 0 || x >= grid.w || y >= grid.h) return false;
+    const value = grid.data[(grid.h - 1 - y) * grid.w + x];
+    return kind === 'hazard' ? value > 127 : value <= 127;
+  };
+  for (let y = 0; y < grid.h; y++) for (let x = 0; x < grid.w; x++) {
+    if (!active(x, y)) continue;
+    const edge = !active(x - 1, y) || !active(x + 1, y) || !active(x, y - 1) || !active(x, y + 1);
+    if (kind === 'hazard') {
+      // Actual hazard cells receive red diagonal hatch; their boundary stays solid red.
+      const hatch = ((x + y) % 9) < 3;
+      pixel(x, y, 229, 72, 77, edge ? 255 : hatch ? 225 : 62);
+    } else {
+      // The PNR area is lightly filled. Boundary pixels form a dashed orange edge.
+      const dash = ((x + y) % 10) < 6;
+      pixel(x, y, 255, 159, 67, edge && dash ? 245 : 42);
+    }
+  }
+  ctx.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+function syncMapPatternVisibility() {
+  for (const [id, overlay] of Object.entries(mapPatternOverlays)) {
+    overlay.visible = S.view === '2d' && S.mapExtent === 'local' && !!S.layers[id]?.on;
+  }
+}
+function updateMapPattern(layer, grid) {
+  if (!mapMesh || !['hazard', 'pnr'].includes(layer.id)) return;
+  let overlay = mapPatternOverlays[layer.id];
+  if (!overlay || overlay.userData.grid !== grid.data) {
+    if (overlay) {
+      overlay.material.map.dispose(); overlay.material.dispose(); overlay.geometry.dispose(); scene.remove(overlay);
+    }
+    overlay = new THREE.Mesh(
+      mapMesh.geometry.clone(),
+      new THREE.MeshBasicMaterial({ map: patternTexture(grid, layer.id), transparent: true, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    overlay.position.copy(mapMesh.position);
+    overlay.position.y += 0.02;
+    overlay.renderOrder = 10;
+    overlay.userData.grid = grid.data;
+    mapPatternOverlays[layer.id] = overlay;
+    scene.add(overlay);
+  }
+  overlay.material.opacity = S.layers[layer.id].opacity;
+  syncMapPatternVisibility();
 }
 
 /** HiRISE 正射影像貼在地形上（組員的資料，只對應預設的現場）。載入後底色改白，圖層變成在影像上著色。 */
@@ -246,13 +310,15 @@ function scatterRocks() {
 
 // 可疊加的圖層：由下往上依序混色，每層有自己的透明度
 const LAYERS = [
-  { id: 'slope', name: 'Slope (°)', ramp: ['#2e7d32', '#f2c94c', '#ff5a36', '#7a0c0c'], legend: ['0°', '22°', '45°'] },
-  { id: 'cost:safe', name: 'Penalty cost — safe', ramp: ['#1b5e20', '#f2c94c', '#ff5a36', '#4a0000'], legend: ['cheap', 'expensive', '∞'] },
-  { id: 'cost:science', name: 'Penalty cost — science', ramp: ['#1b5e20', '#f2c94c', '#ff5a36', '#4a0000'], legend: ['cheap', 'expensive', '∞'] },
-  { id: 'coverage', name: 'Beacon coverage', ramp: ['#ff3b30', '#f2c94c', '#3fd17a', '#2ec4ff'], legend: ['0 beacons', '1–2', '3+'] },
-  { id: 'pnr', name: 'Point-of-no-return zone', ramp: ['#ff3b30', '#3fd17a'], legend: ['beyond PNR', 'safe to reach & return'], dynamic: true },
-  { id: 'hazard', name: 'Hazards (no-go)', ramp: ['#000000', '#ff2a2a'], legend: ['passable', 'no-go'], mask: true },
+  { id: 'slope', name: 'Slope', visual: 'slope', ramp: ['#31d777', '#d6e95e', '#ffad3d', '#ee3b44'], description: 'Terrain steepness. Higher values indicate steeper, more difficult ground.' },
+  { id: 'cost:safe', name: 'Penalty Cost — Safe', visual: 'safe', ramp: ['#062a57', '#087cca', '#42c7ff'], description: 'The travel cost used by the Safe route. It favors wider clearance from hazards and difficult ground.' },
+  { id: 'cost:science', name: 'Penalty Cost — Science', visual: 'science', ramp: ['#2a104d', '#6d2dc5', '#d18aff'], description: 'The travel cost used by the Science route. It accepts more difficult terrain when it improves access to science targets.' },
+  { id: 'coverage', name: 'Beacon Coverage', visual: 'coverage', ramp: ['#ff3b30', '#f2c94c', '#3fd17a', '#2ec4ff'], description: 'The number of usable beacons visible from each point. More coverage supports a more accurate position fix.' },
+  { id: 'pnr', name: 'Point-of-No-Return Zone', visual: 'pnr', ramp: ['#6b3711', '#ffa24b'], description: 'An EVA-only estimate of where the crew can still reach and return from within the current oxygen budget.', dynamic: true },
+  { id: 'hazard', name: 'Hazards (No-Go)', visual: 'hazard', ramp: ['#000000', '#ff2a2a'], description: 'Terrain that exceeds the project slope or roughness safety thresholds and cannot be crossed by route planning.', mask: true },
 ];
+let selectedLayerId = 'hazard';
+let layerInspectorMode = 'info';
 function rampColor(ramp, t, out) {
   const n = ramp.length - 1, x = Math.min(Math.max(t, 0), 1) * n, i = Math.min(Math.floor(x), n - 1);
   return out.set(ramp[i]).lerp(new THREE.Color(ramp[i + 1]), x - i);
@@ -274,11 +340,11 @@ async function applyLayers() {
   const colors = terrainMesh.geometry.attributes.color;
   const out = Float32Array.from(baseColors);
   const { w, h } = S.terr, c = new THREE.Color(), base = new THREE.Color();
-  const legends = [];
   for (const L of LAYERS) {
     const st = S.layers[L.id];
     if (!st.on) continue;
     const g = await layerData(L);
+    updateMapPattern(L, g);
     const kind = L.id.split(':')[0];
     for (let r = 0; r < h; r++) for (let col = 0; col < w; col++) {
       const k = r * w + col, v = g.data[(h - 1 - r) * w + col];
@@ -291,26 +357,91 @@ async function applyLayers() {
       base.fromArray(out, k * 3).lerp(c, a);
       out[k * 3] = base.r; out[k * 3 + 1] = base.g; out[k * 3 + 2] = base.b;
     }
-    legends.push(`<div class="legend-item"><div class="name">${L.name}</div><div class="bar" style="background:linear-gradient(90deg,${L.ramp.join(',')})"></div><div class="legend-text">${L.legend.map((x) => `<span>${x}</span>`).join('')}</div></div>`);
   }
   colors.array.set(out);
   colors.needsUpdate = true;
   if (mapMesh) { mapMesh.geometry.attributes.color.array.set(out); mapMesh.geometry.attributes.color.needsUpdate = true; }
-  $('legend-box').innerHTML = legends.join('');
+  syncMapPatternVisibility();
+}
+function layerById(id) { return LAYERS.find((layer) => layer.id === id) || LAYERS[0]; }
+function layerMeta(layer) {
+  const kind = layer.id.split(':')[0];
+  return S.meta?.layers?.[kind] || null;
+}
+function numberLabel(value) {
+  return Number.isInteger(value) ? String(value) : Number(value).toFixed(1).replace(/\.0$/, '');
+}
+function layerLegend(layer) {
+  const meta = layerMeta(layer);
+  const unit = meta?.unit;
+  const range = Number.isFinite(meta?.min) && Number.isFinite(meta?.max);
+  if (layer.id === 'pnr') return { note: 'Orange dashed boundary: beyond it, the current oxygen budget no longer supports reaching the destination and returning.', labels: ['Unsafe to return', 'Safe to reach & return'] };
+  if (layer.id === 'hazard') return { note: 'Red hatch and solid boundary mark terrain that route planning will not cross.', labels: ['Passable', 'No-Go'] };
+  if (!range) return { note: 'The active map data does not provide a numeric range for this layer.', labels: ['Data range unavailable'] };
+  const suffix = unit === 'deg' ? '°' : unit ? ` ${unit}` : '';
+  const mid = (meta.min + meta.max) / 2;
+  const labels = [meta.min, mid, meta.max].map((value) => `${numberLabel(value)}${suffix}`);
+  const note = layer.id === 'coverage'
+    ? `Visible usable beacons per map cell: ${numberLabel(meta.min)}–${numberLabel(meta.max)} ${unit || 'beacons'}.`
+    : `Actual encoded range in the active map: ${numberLabel(meta.min)}–${numberLabel(meta.max)}${suffix}.`;
+  return { note, labels };
+}
+function selectLayer(id, mode = layerInspectorMode) {
+  selectedLayerId = id;
+  layerInspectorMode = mode;
+  document.querySelectorAll('.layer-row').forEach((row) => row.classList.toggle('selected', row.dataset.layerId === id));
+  document.querySelectorAll('.layer-detail-tab').forEach((tab) => {
+    const active = tab.dataset.layerDetail === layerInspectorMode;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+  renderLayerInspector();
+}
+function renderLayerInspector() {
+  const layer = layerById(selectedLayerId);
+  const content = $('layer-inspector-content');
+  const legend = layerLegend(layer);
+  const swatch = `<div class="layer-detail-swatch pixel-icon pixel-${layer.visual}" aria-hidden="true"></div>`;
+  if (layerInspectorMode === 'legend') {
+    content.innerHTML = `<div class="layer-detail-heading">${swatch}<div><h4>${layer.name}</h4><p>Color meaning for this layer.</p></div></div>
+      <div class="legend-ramp" style="background:linear-gradient(90deg,${layer.ramp.join(',')})"></div>
+      <div class="legend-labels">${legend.labels.map((label) => `<span>${label}</span>`).join('')}</div>
+      <p class="layer-detail-range">${legend.note}</p>`;
+    return;
+  }
+  content.innerHTML = `<div class="layer-detail-heading">${swatch}<div><h4>${layer.name}</h4><p>${layer.description}</p></div></div>
+    <p class="layer-detail-state">${S.layers[layer.id]?.on ? 'Visible on the map.' : 'Hidden until its checkbox is enabled.'}</p>
+    <p class="layer-detail-range">${legend.note}</p>`;
 }
 function buildLayerPanel() {
   const box = $('layers');
+  box.innerHTML = '';
   for (const L of LAYERS) {
     // 危險區是規劃安全資訊的一部分，預設顯示；其餘疊圖由使用者按需開啟。
     S.layers[L.id] = { on: L.id === 'hazard', opacity: L.mask ? 0.65 : 0.6 };
     const row = document.createElement('div');
     row.className = 'layer-row';
-    row.innerHTML = `<input type="checkbox" id="ly-${L.id}" ${S.layers[L.id].on ? 'checked' : ''}><label for="ly-${L.id}" class="check" style="margin:0">${L.name}</label><input type="range" min="0.1" max="1" step="0.05" value="${S.layers[L.id].opacity}" title="opacity">`;
-    const [cb, , op] = row.children;
-    cb.onchange = () => { S.layers[L.id].on = cb.checked; applyLayers().catch((e) => log(e.message, 'bad')); };
-    op.oninput = () => { S.layers[L.id].opacity = +op.value; if (S.layers[L.id].on) applyLayers(); };
+    row.dataset.layerId = L.id;
+    row.innerHTML = `<label class="layer-check" title="Show or hide ${L.name}"><input type="checkbox" id="ly-${L.id}" ${S.layers[L.id].on ? 'checked' : ''}><span aria-hidden="true"></span></label>
+      <button class="layer-preview pixel-icon pixel-${L.visual}" type="button" title="Select ${L.name}" aria-label="Select ${L.name}"></button>
+      <button class="layer-name" type="button">${L.name}</button>
+      <button class="layer-help" type="button" aria-label="About ${L.name}" title="Layer information">ⓘ</button>
+      <div class="layer-opacity"><input type="range" min="0.1" max="1" step="0.05" value="${S.layers[L.id].opacity}" aria-label="${L.name} opacity"><output>${Math.round(S.layers[L.id].opacity * 100)}%</output></div>`;
+    const cb = row.querySelector('input[type=checkbox]');
+    const op = row.querySelector('input[type=range]');
+    const output = row.querySelector('output');
+    const choose = (mode) => selectLayer(L.id, mode);
+    cb.onchange = () => { S.layers[L.id].on = cb.checked; choose(); applyLayers().catch((e) => log(e.message, 'bad')); };
+    op.oninput = () => { S.layers[L.id].opacity = +op.value; output.value = `${Math.round(S.layers[L.id].opacity * 100)}%`; choose(); if (S.layers[L.id].on) applyLayers(); };
+    row.querySelector('.layer-preview').onclick = () => choose();
+    row.querySelector('.layer-name').onclick = () => choose();
+    row.querySelector('.layer-help').onclick = () => choose('info');
     box.appendChild(row);
   }
+  document.querySelectorAll('.layer-detail-tab').forEach((tab) => {
+    tab.onclick = () => selectLayer(selectedLayerId, tab.dataset.layerDetail);
+  });
+  selectLayer(selectedLayerId);
 }
 const pnrOn = () => S.layers.pnr && S.layers.pnr.on;
 
@@ -352,7 +483,7 @@ async function toggleGlobe() {
     controls.maxDistance = 30000; controls.maxPolarAngle = Math.PI;
     controls.target.copy(c);
     camera.position.copy(c).add(d.clone().multiplyScalar(g.R * 2.6));
-    log('Globe view: NASA MOLA topography, 12× vertical exaggeration; the blue pin marks the EVA site in Gale crater', 'ok');
+    log('Globe view: global elevation model, 12× vertical exaggeration; the blue pin marks the EVA site in Gale crater', 'ok');
   } else if (S.savedCam) {
     camera.position.copy(S.savedCam.pos); controls.target.copy(S.savedCam.target);
     controls.maxDistance = S.savedCam.maxD; controls.maxPolarAngle = S.savedCam.polar;
@@ -557,6 +688,7 @@ function updateSteps() {
 function selectMoreTab(id) {
   document.querySelectorAll('.more-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === id));
   document.querySelectorAll('.more-pane').forEach((pane) => pane.classList.toggle('active', pane.id === id));
+  $('more-overlay').classList.toggle('layers-active', id === 'tab-layers');
 }
 function openMore(id = 'tab-layers') {
   selectMoreTab(id);
@@ -1030,6 +1162,7 @@ function syncMapVisibility() {
   mapMesh.visible = isMap;
   globalMapMeshes.forEach((m) => (m.visible = isMap));
   if (regionalMesh) regionalMesh.visible = isMap;
+  syncMapPatternVisibility();
   // 現場標記：全球圖用大圓點、區域圖縮小；看現場 HiRISE 圖時隱藏，避免蓋住地圖
   if (S.sitePin) {
     S.sitePin.visible = isMap && S.mapExtent !== 'local';
@@ -1273,6 +1406,7 @@ const miniMe = miniMarker(flat(new THREE.ShapeGeometry(new THREE.Shape([
 const miniGoal = miniMarker(flat(new THREE.RingGeometry(0.55, 1, 24)), '#ff7a3d');
 const miniBase = miniMarker(flat(new THREE.PlaneGeometry(1.4, 1.4)), '#3fd17a');
 const miniDefaultHalf = () => (S.eva ? 350 : Math.max(S.W, S.H) * 0.55);
+let miniPan = { x: 0, z: 0 };
 
 function renderMini() {
   if (!S.tabletUp || S.view !== '3d' || S.inGlobe || !S.walk || !terrainMesh) return;
@@ -1280,7 +1414,8 @@ function renderMini() {
   if (r.width < 20 || r.height < 20) return;
   const follow = S.eva || S.miniHalf !== null;
   const half = S.miniHalf ?? miniDefaultHalf();
-  const c = follow ? astro.position : toV(S.W / 2, S.H / 2, S.zmid);
+  const c = (follow ? astro.position : toV(S.W / 2, S.H / 2, S.zmid)).clone();
+  c.x += miniPan.x; c.z += miniPan.z;
   const aspect = r.width / r.height;
   Object.assign(miniCam, { left: -half * aspect, right: half * aspect, top: half, bottom: -half });
   miniCam.updateProjectionMatrix();
@@ -1309,9 +1444,27 @@ function renderMini() {
 }
 
 const tabMap = $('tab-map');
-let mapDown = null;
-tabMap.addEventListener('pointerdown', (e) => (mapDown = [e.clientX, e.clientY]));
+let mapDown = null, mapPanPointer = null;
+tabMap.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('button')) return;
+  if (e.button === 1) {
+    e.preventDefault();
+    mapPanPointer = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    tabMap.setPointerCapture(e.pointerId);
+    tabMap.classList.add('panning');
+  } else if (e.button === 0) mapDown = [e.clientX, e.clientY];
+});
+tabMap.addEventListener('pointermove', (e) => {
+  if (!mapPanPointer || e.pointerId !== mapPanPointer.id) return;
+  const r = tabMap.getBoundingClientRect();
+  const scale = 2 * (S.miniHalf ?? miniDefaultHalf()) / r.height;
+  miniPan.x -= (e.clientX - mapPanPointer.x) * scale;
+  miniPan.z -= (e.clientY - mapPanPointer.y) * scale;
+  mapPanPointer.x = e.clientX; mapPanPointer.y = e.clientY;
+});
 tabMap.addEventListener('pointerup', (e) => {
+  if (mapPanPointer && e.pointerId === mapPanPointer.id) { mapPanPointer = null; tabMap.classList.remove('panning'); return; }
+  if (e.button !== 0) return;
   if (!mapDown || Math.hypot(e.clientX - mapDown[0], e.clientY - mapDown[1]) > 5 || S.eva) return;
   const r = tabMap.getBoundingClientRect();
   const ray = new THREE.Raycaster();
@@ -1324,7 +1477,9 @@ tabMap.addEventListener('wheel', (e) => {
   const cur = S.miniHalf ?? miniDefaultHalf();
   S.miniHalf = Math.max(60, Math.min(Math.max(S.W, S.H) * 0.8, cur * (e.deltaY > 0 ? 1.2 : 1 / 1.2)));
 }, { passive: false });
-tabMap.addEventListener('dblclick', () => (S.miniHalf = null));
+tabMap.addEventListener('pointercancel', () => { mapPanPointer = null; tabMap.classList.remove('panning'); });
+tabMap.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
+tabMap.addEventListener('dblclick', () => { S.miniHalf = null; miniPan = { x: 0, z: 0 }; });
 
 // ---- 平板閒置畫面：指南針 + 環境危險程度（顏色）+ 導航狀態
 let tabTimer = 0;
@@ -1526,10 +1681,11 @@ async function boot() {
   $('sim-open-tablet').onclick = () => setTablet(true);
   $('sim-help').onclick = () => $('intro').classList.remove('hidden');
   const th = S.meta.thresholds;
-  $('source').innerHTML = `Terrain: ${S.meta.source}<br>No-go thresholds: slope &gt; ${th.slope_max_deg.toFixed(0)}°, roughness &gt; ${th.rough_max_m.toFixed(2)} m.<br>`
+  // Keep source metadata intact for processing, but avoid showing institutional names in the public UI.
+  $('source').innerHTML = `Terrain: HiRISE local terrain model<br>No-go thresholds: slope &gt; ${th.slope_max_deg.toFixed(0)}°, roughness &gt; ${th.rough_max_m.toFixed(2)} m.<br>`
     + `Engine: ${api.kind === 'wasm' ? 'WebAssembly in this browser' : 'local mars-server'} — no network link required.<br>`
-    + (S.region ? 'Regional context: NASA MGS MOLA 463 m (Gale crater). ' : '')
-    + 'Gale regional image: NASA MGS MOC Atlas 256 px/deg. '
+    + (S.region ? 'Regional context: global elevation model, 463 m (Gale crater). ' : '')
+    + 'Gale regional image: orbital image mosaic, 256 px/deg. '
     + 'Beacon ranges are simulated from the terrain model; science stops are auto-selected candidates.';
   $('loading').classList.add('done');
   updateSteps();
