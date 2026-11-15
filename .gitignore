@@ -14,3 +14,5 @@ __pycache__/
 
 # Organizer guideline PDFs: keep local only, not for redistribution
 docs/drive-download-*.zip
+
+http.html
