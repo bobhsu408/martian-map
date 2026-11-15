@@ -52,4 +52,5 @@ NASA Space Apps 規定提交時必須完整揭露 AI（官方稱 Super Intellige
 | 2026-11-15 04:40 | Claude Code (Claude Opus 5.5) | 修正抵達目標後無法移動；新增「與基地斷線」與「自行布設信標」（引擎 localize 支援 disabled / extra_beacons、幾何退化保護，新增測試；前端按鈕與 B 鍵） | 隊長提出斷線後布設信標、信標越多越準的定位設計；隊長試用時回報抵達後卡住 |
 | 2026-11-15 05:20 | Claude Code (Claude Opus 5.5) | 讓不歸點看得見：平板列「回頭倒數」（O₂ − 回程 − 預留）、EVA 中自動畫出 PNR 邊界紅點（主畫面＋小地圖，O₂ 充裕時隱藏） | 隊長試用後指出「感覺不到不歸點」，提出要能直觀看到 |
 | 2026-11-15 06:00 | Claude Code (Claude Opus 5.5) | 合併組員 map-development（英文 SI 紀錄、資料目錄、Codex 紀錄；保留會被舊版覆蓋掉的紀錄列）；撰寫英文提交內容初稿 engDocs/SUBMISSION.md、summary.md（Summary、Project Details、NASA 資料、References；SI 段落只列事實，留給團隊自己寫） | 隊長決定由 AI 起草英文提交內容（原分工為團隊自寫初稿）；內容依據團隊這兩天的設計決定與筆記，團隊負責審稿修改並自寫 SI 說明 |
+| 2026-11-15 15:23 | Codex | 依四張參考圖重組平板主介面與目的地→路線→EVA 狀態；保留並重新安排既有路線、EVA 遙測、導航、信標、緊急事件、圖層、地圖範圍、地球儀、回饋與任務紀錄入口；補上地圖縮放、重置、比例尺，以及 2D 地圖在平板地圖窗格中的渲染、平移、點選、標記和路線疊圖；更新中英介面文字與端到端煙霧流程。Vite production build、JavaScript 語法檢查、HTML ID 唯一性檢查與本機 HTTP 200 檢查完成；Windows headless Edge 測試未完成，DevTools 在導覽／執行 JavaScript 時逾時，未據此宣稱互動測試通過 | 提供四張 UI 參考圖及完整的功能保留、版面流程、色彩與測試要求 |
 <!-- 之後每一步都往下新增一列 -->

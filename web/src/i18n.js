@@ -8,6 +8,23 @@ const EXACT = {
   'You are an astronaut on Mount Sharp': '你是 Mount Sharp 上的太空人',
   'Start': '開始',
   'FREE WALK': '自由行走',
+  'MARS EVA PLANNER': '火星 EVA 規劃系統',
+  'OFFLINE NAVIGATION & MISSION PLANNING': '離線導航與任務規劃',
+  'TERRAIN: CHECKING': '地形：檢查中',
+  'Mission Planner': '任務規劃', 'Destination': '目的地', 'Choose a science target': '選擇科學目標',
+  'More': '更多', 'Map layers': '地圖圖層', 'Distance': '距離', 'ETA': '預計時間', 'Elevation': '高程',
+  'O₂ REMAINING': '剩餘 O₂', 'EVA TIME': 'EVA 時間', 'RETURN TIME': '返航時間', 'TURN BACK IN': '回頭倒數',
+  'POSITION ERROR': '定位誤差', 'VISIBLE BEACONS': '可見信標', 'TERRAIN': '地形', 'Mission Log': '任務紀錄',
+  'Select a destination': '選擇目的地', 'Route options appear after you choose a target.': '選擇目標後即可查看路線。',
+  'Select a science target or tap a point on the map. Scroll to zoom; double-click to reset the map.': '選擇科學目標，或在地圖上點選位置。滾輪可縮放，雙擊可重設地圖。',
+  'Custom destination selected. Tap a point on the map to set the goal.': '已選擇自訂目的地。請在地圖上點選目標位置。',
+  'Keep current destination': '保留目前目的地', 'Routes': '路線', 'Mission actions': '任務操作', 'Mission controls': '任務控制', 'Autopilot': '自動導航',
+  'Deploy Beacon (B)': '布設信標（B）', 'Return to Base': '返回基地', 'Start Over': '重新開始',
+  'Simulation events': '模擬事件', 'Reset mission': '重設任務',
+  'EVA READY': 'EVA 就緒', 'EVA · ON ROUTE': 'EVA · 行進中', 'EVA · RETURNING TO BASE': 'EVA · 返回基地中', 'EVA · PAUSED AT DESTINATION': 'EVA · 已抵達目的地',
+  'Select a route to prepare EVA': '選擇路線以準備 EVA', 'ON ROUTE': '在路線上', '▲ Acquiring position': '▲ 定位中',
+  'Straight ahead': '直行', 'Turn back now': '立即回頭',
+  'Help': '說明',
   'ROUTE READY': '路線已就緒',
   'Tab / M — open Martian Map': 'Tab / M — 打開 Martian Map',
   'Tab / M — start the EVA on the tablet': 'Tab / M — 在平板上開始 EVA',
@@ -88,6 +105,12 @@ const EXACT = {
 };
 
 const PATTERNS = [
+  [/^TERRAIN: (NO-GO|HIGH|CAUTION|LOW)$/, (m) => `地形：${({ 'NO-GO': '禁區', HIGH: '高', CAUTION: '注意', LOW: '低' })[m[1]]}`],
+  [/^▲ (SAFE|BALANCED|SCIENCE) route selected$/, (m) => `▲ 已選擇${({ SAFE: '安全', BALANCED: '平衡', SCIENCE: '科學' })[m[1]]}路線`],
+  [/^▲ (Straight ahead|Turn left \d+°|Turn right \d+°)$/, (m) => `▲ ${tr(m[1]) ?? m[1]}`],
+  [/^↩ Return (.+)$/, (m) => `↩ 返航 ${tr(m[1]) ?? m[1]}`],
+  [/^(.+) · (SAFE|BALANCED|SCIENCE|RETURN) route$/, (m) => `${tr(m[1]) ?? m[1]} · ${({ SAFE: '安全', BALANCED: '平衡', SCIENCE: '科學', RETURN: '返航' })[m[2]]}路線`],
+  [/^Science Stop ([A-C])$/, (m) => `科學點 ${m[1]}`],
   [/^📍 Deploy beacon \((\d+) left\)$/, (m) => `📍 布設信標（剩 ${m[1]} 個）`],
   [/^Beacon #(\d+) deployed at \((.+)\) m — (\d+) left in kit$/, (m) => `已布設信標 #${m[1]}，位置（${m[2]}）m — 還剩 ${m[3]} 個`],
   [/^Deployed #(\d+)$/, (m) => `自行布設 #${m[1]}`],
@@ -147,11 +170,10 @@ const PATTERNS = [
 // 整段含 HTML 標籤的區塊，直接整段替換
 const BLOCKS = {
   '#intro .intro-card p:nth-of-type(1)': '地面是真實的 NASA HiRISE 地形。用 <b>W A S D</b> 或方向鍵走路，拖曳滑鼠看四周，<b>V</b> 切換第一／第三人稱。',
-  '#intro .intro-card p:nth-of-type(2)': '你手上的平板就是 <b>Martian Map</b>。平時顯示指南針和地面危險度，按 <b>Tab</b> 或 <b>M</b> 舉起平板：',
-  '#intro ol': '<li><b>選擇目的地</b> — 科學點，或直接點地圖。</li><li><b>選擇路線</b> — 安全、平衡或科學。</li><li><b>出艙 EVA</b> — 自己走或用自動導航，再試試緊急狀況。</li>',
+  '#intro .intro-card p:nth-of-type(2)': '你手上的平板就是 <b>Martian Map</b>。平時顯示指南針和地面危險度，按 <b>Tab</b> 或 <b>M</b> 舉起平板。',
+  '#intro .intro-card p:nth-of-type(3)': '選擇科學點或在地圖上點選目的地，再比較可用路線並開始 EVA。行進時可手動操控或使用自動導航；任務面板也提供返航、信標與模擬事件操作。',
   '#intro .hint': '所有運算都在這個瀏覽器裡完成 — 不需要和地球連線。',
   '#cam-hint': 'W A S D 走路 · 拖曳看四周 · <b>Tab / M</b> 平板 · <b>V</b> 第一／第三人稱',
-  '#step3 .hint': '放下平板（Tab / M）觀看。手動：W / ↑ 前進 · A D / ← → 轉向 · S / ↓ 後退 · 拖曳看四周',
 };
 
 function tr(s) {

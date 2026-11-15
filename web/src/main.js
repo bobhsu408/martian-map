@@ -14,7 +14,7 @@ const MESH_STEP = 2; // 地形 mesh 取樣（2 → 4 m 網格）
 const EXAG = 1.3; // 垂直誇張
 const TIME_SCALE = 30; // 1 秒真實時間 = 30 秒任務時間
 const LOC_INTERVAL = 0.35; // 每 0.35 秒做一次定位
-const COLORS = { safe: '#3fd17a', balanced: '#f2c94c', science: '#bb6bd9', return: '#ff5a36' };
+const COLORS = { safe: '#8793a0', balanced: '#8793a0', science: '#8793a0', return: '#1688d4' };
 const $ = (id) => document.getElementById(id);
 const api = createBackend();
 
@@ -29,7 +29,7 @@ const S = {
   linkLost: false, deployed: [], // 和基地斷線、太空人自行布設的信標
   walk: null, // 太空人（EVA 前後也能自由走動）
   cam: 'third', look: { yaw: 0, pitch: 0 }, // 鏡頭：third / first / orbit
-  tabletUp: false, miniHalf: null, // 手持平板是否舉起、小地圖縮放
+  tabletUp: true, miniHalf: null, miniOffset: { x: 0, z: 0 }, editingDestination: false, // 平板預設開啟；小地圖縮放／平移
 };
 
 // ---------------------------------------------------------------- scene
@@ -108,6 +108,58 @@ function geoV(x, y, lift = 0) {
     lift,
     -(b.south + (y / S.H) * (b.north - b.south)),
   );
+}
+
+const mapMarkerGroup = new THREE.Group();
+scene.add(mapMarkerGroup);
+const mapTargetMarkers = [], mapBeaconMarkers = new Map();
+let mapBaseMarker, mapCurrentMarker, mapHeadingMarker;
+function flatMapMarker(geometry, color) {
+  const marker = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true }));
+  marker.rotation.x = -Math.PI / 2;
+  marker.renderOrder = 1001;
+  mapMarkerGroup.add(marker);
+  return marker;
+}
+function buildMapMarkers() {
+  mapBaseMarker = flatMapMarker(new THREE.PlaneGeometry(1, 1), '#32c982');
+  mapCurrentMarker = flatMapMarker(new THREE.CircleGeometry(1, 24), '#32c982');
+  const arrow = new THREE.Shape();
+  arrow.moveTo(0, 1); arrow.lineTo(0.6, -0.7); arrow.lineTo(0, -0.38); arrow.lineTo(-0.6, -0.7); arrow.closePath();
+  mapHeadingMarker = flatMapMarker(new THREE.ShapeGeometry(arrow), '#f3f6fa');
+  mapHeadingMarker.rotation.order = 'YXZ';
+  for (const target of S.meta.targets) {
+    const marker = flatMapMarker(new THREE.RingGeometry(0.6, 1, 24), '#35a4f0');
+    marker.position.copy(geoV(target.x, target.y, 0.12));
+    mapTargetMarkers.push(marker);
+  }
+  mapBaseMarker.position.copy(geoV(S.meta.base[0], S.meta.base[1], 0.15));
+  mapHeadingMarker.material.opacity = 0.95;
+  for (const beacon of S.meta.beacons) {
+    const marker = flatMapMarker(new THREE.CircleGeometry(1, 16), '#35a4f0');
+    marker.position.copy(geoV(beacon.x, beacon.y, 0.1));
+    mapBeaconMarkers.set(beacon.id, marker);
+  }
+}
+function updateMapMarkers(rect) {
+  if (!mapCamera || !S.walk) return;
+  const worldPerPixel = (2 * mapViewExtent) / (mapCamera.zoom * rect.height);
+  const size = worldPerPixel * 5;
+  mapBaseMarker.scale.setScalar(size * 1.1);
+  mapCurrentMarker.position.copy(geoV(S.walk.pos.x, S.walk.pos.y, 0.2));
+  mapCurrentMarker.scale.setScalar(size * 0.65);
+  const heading = S.eva?.heading ?? S.walk.heading;
+  mapHeadingMarker.position.copy(geoV(S.walk.pos.x, S.walk.pos.y, 0.3));
+  mapHeadingMarker.rotation.y = heading - Math.PI / 2;
+  mapHeadingMarker.scale.setScalar(size * 1.25);
+  for (const marker of mapTargetMarkers) marker.scale.setScalar(size * 0.9);
+  for (const item of S.deployed) {
+    if (mapBeaconMarkers.has(item.b.id)) continue;
+    const marker = flatMapMarker(new THREE.CircleGeometry(1, 16), '#35a4f0');
+    marker.position.copy(geoV(item.b.x, item.b.y, 0.1));
+    mapBeaconMarkers.set(item.b.id, marker);
+  }
+  for (const marker of mapBeaconMarkers.values()) marker.scale.setScalar(size * 0.45);
 }
 
 function heightAt(x, y) {
@@ -354,6 +406,7 @@ async function toggleGlobe() {
   } else if (S.savedCam) {
     camera.position.copy(S.savedCam.pos); controls.target.copy(S.savedCam.target);
     controls.maxDistance = S.savedCam.maxD; controls.maxPolarAngle = S.savedCam.polar;
+    syncMapVisibility();
   }
 }
 function siteObjects() {
@@ -371,6 +424,7 @@ function label(text, cls, v) {
   return o;
 }
 const beaconTop = {};
+const siteMarkerObjects = [];
 function addMarkers() {
   const [bx, by] = S.meta.base;
   const hab = new THREE.Group();
@@ -379,14 +433,17 @@ function addMarkers() {
   hab.add(dome, ring);
   hab.position.copy(groundV(bx, by, 0));
   scene.add(hab);
+  siteMarkerObjects.push(hab);
   label('BASE / HABITAT', 'base', groundV(bx, by, 40));
   for (const t of S.meta.targets) {
     const m = new THREE.Mesh(new THREE.OctahedronGeometry(6), new THREE.MeshLambertMaterial({ color: '#4dd6ff', emissive: '#0a3a4a' }));
     m.position.copy(groundV(t.x, t.y, 16));
     scene.add(m);
+    siteMarkerObjects.push(m);
     label(t.name, 'target', groundV(t.x, t.y, 34));
   }
   for (const b of S.meta.beacons) addBeaconMarker(b);
+  buildMapMarkers();
 }
 const beaconTopMesh = {};
 /** 信標標記（柱子＋燈），回傳可整組移除的物件。 */
@@ -399,6 +456,7 @@ function addBeaconMarker(b, color) {
   top.position.copy(groundV(b.x, b.y, hgt));
   g.add(pole, top);
   scene.add(g);
+  siteMarkerObjects.push(g);
   beaconTop[b.id] = top.position.clone();
   beaconTopMesh[b.id] = top;
   g.add(label(`${lora ? 'LoRa' : 'UWB'} · ${b.label || b.id}`, b.kind, groundV(b.x, b.y, hgt + 10)));
@@ -406,14 +464,18 @@ function addBeaconMarker(b, color) {
 }
 let goalMarker;
 function setGoal(x, y, name) {
+  const changed = !S.goal || S.goal.x !== x || S.goal.y !== y;
   S.goal = { x, y };
+  S.goal.name = name;
+  S.editingDestination = false;
   if (!goalMarker) {
     goalMarker = new THREE.Mesh(new THREE.ConeGeometry(5, 14, 12), new THREE.MeshLambertMaterial({ color: '#ff7a3d', emissive: '#40150a' }));
     goalMarker.rotation.x = Math.PI;
     scene.add(goalMarker);
   }
   goalMarker.position.copy(groundV(x, y, 12));
-  if (!S.eva && Object.keys(S.routes).length) { clearRoutes(); $('routes').innerHTML = ''; S.selected = null; $('start').disabled = true; }
+  goalMarker.visible = S.view !== '2d';
+  if (!S.eva && changed && Object.keys(S.routes).length) { clearRoutes(); $('routes').innerHTML = ''; S.selected = null; $('start').disabled = true; }
   log(`Goal set: ${name}`);
   if ($('step1')) updateSteps();
 }
@@ -455,6 +517,21 @@ scene.add(obstacleGroup);
 // ---------------------------------------------------------------- routes
 const routeGroup = new THREE.Group();
 scene.add(routeGroup);
+const mapRouteGroup = new THREE.Group();
+mapRouteGroup.visible = false;
+scene.add(mapRouteGroup);
+function mapRouteMesh(route, color) {
+  const pts = route.path.map(([x, y]) => geoV(x, y, 0.06));
+  const bounds = localGeoBounds();
+  const radius = Math.max(Math.min((bounds.east - bounds.west) / S.W, (bounds.north - bounds.south) / S.H) * 1.8, 1e-7);
+  const mesh = new THREE.Mesh(
+    new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), Math.min(pts.length * 2, 5000), radius, 6, false),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false }),
+  );
+  mesh.renderOrder = 1000;
+  mapRouteGroup.add(mesh);
+  return mesh;
+}
 function routeMesh(route, color) {
   const pts = [];
   for (let i = 0; i < route.path.length - 1; i++) {
@@ -491,11 +568,18 @@ function routeMesh(route, color) {
 }
 function clearRoutes() {
   routeGroup.children.slice().forEach((m) => { m.geometry.dispose(); routeGroup.remove(m); });
+  mapRouteGroup.children.slice().forEach((m) => { m.geometry.dispose(); mapRouteGroup.remove(m); });
   S.routes = {};
 }
 function selectRoute(key) {
   S.selected = key;
   for (const [k, r] of Object.entries(S.routes)) {
+    const color = k === key ? '#1688d4' : '#8793a0';
+    r.mesh.material.color.set(color);
+    r.mapLine?.material.color.set(color);
+    if (r.mapLine) r.mapLine.material.opacity = k === key ? 0.95 : 0.32;
+    if (r.mesh.userData.thin) r.mesh.userData.thin.material.color.set(color);
+    if (r.mesh.userData.mini) r.mesh.userData.mini.material.color.set(color);
     r.mesh.material.opacity = k === key ? 1 : 0.25;
     if (r.mesh.userData.mini) r.mesh.userData.mini.material.opacity = k === key ? 1 : 0.3;
     if (r.mesh.userData.thin) r.mesh.userData.thin.visible = k === key;
@@ -524,16 +608,56 @@ function card(key, r) {
   return div;
 }
 
-/** 三步驟的狀態：目前在哪一步、哪些已完成、哪些還不能用。 */
+/** Keep the destination, route, and EVA panels aligned with the actual mission state. */
 function updateSteps() {
-  const planned = Object.keys(S.routes).length > 0 && !S.eva;
-  const st = (id, cls) => { $(id).classList.remove('current', 'done', 'locked'); if (cls) $(id).classList.add(cls); };
-  if (S.eva) { st('step1', 'done'); st('step2', 'done'); st('step3', 'current'); }
-  else if (planned && S.selected) { st('step1', 'done'); st('step2', 'done'); st('step3', 'current'); }
-  else if (S.goal) { st('step1', 'done'); st('step2', 'current'); st('step3', 'locked'); }
-  else { st('step1', 'current'); st('step2', 'locked'); st('step3', 'locked'); }
+  const hasRoutes = Object.keys(S.routes).length > 0;
+  const stage = S.eva ? 'eva' : S.editingDestination || !S.goal ? 'destination' : hasRoutes ? 'route' : 'route-selection';
+  $('tablet').dataset.stage = stage;
+  $('tablet').classList.toggle('route-selected', !!(S.selected && S.routes[S.selected]?.route));
+  $('destination-summary').classList.toggle('hidden', !S.goal || S.editingDestination);
+  $('destination-cancel').classList.toggle('hidden', !S.goal || !S.editingDestination || !!S.eva);
+  $('destination-name').textContent = S.goal?.name || '—';
+  $('destination-empty').classList.toggle('hidden', !!S.goal);
+  $('plan').disabled = !S.goal || !!S.eva;
   $('emergency').classList.toggle('hidden', !S.eva);
-  $('plan').textContent = planned ? 'Find routes again' : 'Find routes';
+  $('plan').textContent = hasRoutes ? 'Find routes again' : 'Find routes';
+  $('eva-title').textContent = S.eva ? (S.eva.done ? 'EVA · PAUSED AT DESTINATION' : S.eva.returning ? 'EVA · RETURNING TO BASE' : 'EVA · ON ROUTE') : 'EVA READY';
+  $('eva-destination').textContent = S.eva ? `${S.eva.returning ? 'Base / Habitat' : S.goal?.name || 'Selected destination'} · ${(S.eva.routeKey || S.selected || 'safe').toUpperCase()} route` : S.selected ? `${S.goal?.name || 'Destination'} · ${S.selected} route selected` : 'Select a route to prepare EVA';
+  updateRouteFooter();
+}
+
+function clearDestination() {
+  if (S.eva) return;
+  S.goal = null;
+  S.editingDestination = false;
+  if (goalMarker) goalMarker.visible = false;
+  clearRoutes();
+  S.selected = null;
+  $('routes').innerHTML = '';
+  $('start').disabled = true;
+  updateSteps();
+}
+
+function updateRouteFooter() {
+  const e = S.eva, route = e?.route || S.routes[S.selected]?.route;
+  const visible = !!route && (S.selected || e);
+  $('route-footer').classList.toggle('hidden', !visible);
+  document.querySelector('.route-legend').classList.toggle('hidden', !visible);
+  if (!visible) return;
+  const remaining = e?.nav?.remaining_m ?? route.length_m;
+  const eta = route.length_m > 0 ? route.eta_min * (remaining / route.length_m) : route.eta_min;
+  if (e?.nav) {
+    const bearing = Math.atan2(e.nav.next[1] - e.est.y, e.nav.next[0] - e.est.x);
+    const rel = Math.atan2(Math.sin(bearing - e.heading), Math.cos(bearing - e.heading));
+    const direction = Math.abs(rel) < 0.2 ? 'Straight ahead' : rel > 0 ? `Turn left ${Math.round((rel * 180) / Math.PI)}°` : `Turn right ${Math.round((-rel * 180) / Math.PI)}°`;
+    $('route-direction').textContent = `${e.returning ? '↩ Return' : '▲'} ${direction}`;
+  } else {
+    $('route-direction').textContent = e ? '▲ Acquiring position' : `▲ ${S.selected.toUpperCase()} route selected`;
+  }
+  $('g-distance').textContent = `${(remaining / 1000).toFixed(2)} km`;
+  $('g-eta').textContent = `${Math.max(0, eta).toFixed(0)} min`;
+  const pos = e?.est || S.walk?.pos;
+  $('g-elevation').textContent = pos ? `${heightAt(pos.x, pos.y).toFixed(0)} m` : '—';
 }
 
 async function planRoutes() {
@@ -545,7 +669,7 @@ async function planRoutes() {
     $('routes').innerHTML = '';
     for (const key of ['safe', 'balanced', 'science']) {
       const r = res[key];
-      if (r) S.routes[key] = { route: r, mesh: routeMesh(r, COLORS[key]) };
+      if (r) S.routes[key] = { route: r, mesh: routeMesh(r, COLORS[key]), mapLine: mapRouteMesh(r, COLORS[key]) };
       $('routes').appendChild(card(key, r));
     }
     log(`3 routes planned on-board in ${(performance.now() - t0).toFixed(0)} ms`, 'ok');
@@ -556,7 +680,7 @@ async function planRoutes() {
 }
 function setActiveRoute(route, key) {
   clearRoutes();
-  S.routes[key] = { route, mesh: routeMesh(route, COLORS[key] || COLORS.safe) };
+  S.routes[key] = { route, mesh: routeMesh(route, COLORS[key] || COLORS.safe), mapLine: mapRouteMesh(route, COLORS[key] || COLORS.safe) };
   S.eva.route = route;
   S.eva.routeKey = key;
 }
@@ -602,7 +726,6 @@ function startEva() {
   estMarker.visible = true;
   applyFog();
   $('hud').classList.remove('hidden');
-  setTablet(false);
   ['start', 'plan'].forEach((id) => ($(id).disabled = true));
   ['rockfall', 'leak', 'drift', 'home', 'linkloss', 'deploy'].forEach((id) => ($(id).disabled = false));
   placeAstronaut();
@@ -740,6 +863,9 @@ function updateHud() {
   const e = S.eva, n = e.nav, loc = e.loc, reserve = S.meta.params.o2_reserve_min;
   $('g-time').textContent = `${e.t.toFixed(0)} min`;
   $('g-o2').textContent = `${e.o2.toFixed(0)} min`;
+  const oxygenPct = Math.max(0, Math.min(100, (e.o2 / S.meta.params.o2_capacity_min) * 100));
+  $('o2-fill').style.width = `${oxygenPct}%`;
+  $('o2-fill').classList.toggle('low', oxygenPct <= 20);
   if (loc) {
     $('g-pos').textContent = `± ${loc.sigma_m < 10 ? loc.sigma_m.toFixed(1) : loc.sigma_m.toFixed(0)} m`;
     $('g-bcn').textContent = `${loc.visible_beacons.length} · ${loc.mode === 'multilateration' ? 'multilat' : 'dead reck.'}`;
@@ -778,6 +904,7 @@ function updateHud() {
   $('tb-arrow').style.transform = $('arrow').style.transform;
   const turnTxt = Math.abs(rel) < 0.2 ? 'straight ahead' : rel > 0 ? `turn left ${Math.round((rel * 180) / Math.PI)}°` : `turn right ${Math.round((-rel * 180) / Math.PI)}°`;
   $('compass-text').innerHTML = `${turnTxt}<br><small>${(n.remaining_m / 1000).toFixed(2)} km to ${e.returning ? 'base' : 'target'}</small>`;
+  updateRouteFooter();
 }
 
 async function doReplan(reasonText) {
@@ -905,6 +1032,8 @@ function clearBeaconEvents() {
     d.obj.traverse((o) => o.element?.remove());
     scene.remove(d.obj);
     delete beaconTop[d.b.id]; delete beaconTopMesh[d.b.id];
+    const mapMarker = mapBeaconMarkers.get(d.b.id);
+    if (mapMarker) { mapMarker.geometry.dispose(); mapMarker.material.dispose(); mapMarkerGroup.remove(mapMarker); mapBeaconMarkers.delete(d.b.id); }
   }
   S.deployed = [];
   $('deploy').textContent = `📍 Deploy beacon (${BEACON_KIT} left)`;
@@ -990,6 +1119,9 @@ function syncMapVisibility() {
   mapMesh.visible = isMap;
   globalMapMeshes.forEach((m) => (m.visible = isMap));
   if (regionalMesh) regionalMesh.visible = isMap;
+  mapMarkerGroup.visible = isMap;
+  siteMarkerObjects.forEach((o) => (o.visible = !isMap));
+  if (goalMarker) goalMarker.visible = !isMap && !!S.goal;
   // 現場標記：全球圖用大圓點、區域圖縮小；看現場 HiRISE 圖時隱藏，避免蓋住地圖
   if (S.sitePin) {
     S.sitePin.visible = isMap && S.mapExtent !== 'local';
@@ -1001,6 +1133,7 @@ function syncMapVisibility() {
   beaconLines.visible = !isMap;
   obstacleGroup.visible = !isMap;
   routeGroup.visible = !isMap;
+  mapRouteGroup.visible = isMap;
   if (S.region) S.region.mesh.visible = !isMap && !S.inGlobe && VIEW_KM[+$('view-dist').value] > 3;
   labels.domElement.style.visibility = isMap ? 'hidden' : '';
   // 2D 相機離地很遠，霧會把整張圖蓋掉 → 2D 模式關閉霧
@@ -1232,25 +1365,43 @@ const miniBase = miniMarker(flat(new THREE.PlaneGeometry(1.4, 1.4)), '#3fd17a');
 const miniDefaultHalf = () => (S.eva ? 350 : Math.max(S.W, S.H) * 0.55);
 
 function renderMini() {
-  if (!S.tabletUp || S.view !== '3d' || S.inGlobe || !S.walk || !terrainMesh) return;
+  if (!S.tabletUp || S.inGlobe || !S.walk || !terrainMesh) return;
   const r = $('tab-map').getBoundingClientRect();
   if (r.width < 20 || r.height < 20) return;
-  const follow = S.eva || S.miniHalf !== null;
-  const half = S.miniHalf ?? miniDefaultHalf();
-  const c = follow ? astro.position : toV(S.W / 2, S.H / 2, S.zmid);
   const aspect = r.width / r.height;
-  Object.assign(miniCam, { left: -half * aspect, right: half * aspect, top: half, bottom: -half });
-  miniCam.updateProjectionMatrix();
-  miniCam.position.set(c.x, 20000, c.z);
-  miniCam.lookAt(c.x, 0, c.z);
-  const k = half * 0.045;
-  miniMe.position.set(astro.position.x, astro.position.y + 50, astro.position.z);
-  miniMe.rotation.y = S.walk.heading - Math.PI / 2;
-  miniMe.scale.setScalar(k);
-  miniGoal.visible = !!S.goal;
-  if (S.goal) { miniGoal.position.copy(groundV(S.goal.x, S.goal.y, 50)); miniGoal.scale.setScalar(k * 0.9); }
-  miniBase.position.copy(groundV(S.meta.base[0], S.meta.base[1], 50));
-  miniBase.scale.setScalar(k * 0.8);
+  let activeCamera, savedCamera;
+  if (S.view === '2d' && mapCamera && mapControls) {
+    activeCamera = mapCamera;
+    updateMapMarkers(r);
+    savedCamera = {
+      left: mapCamera.left, right: mapCamera.right, top: mapCamera.top, bottom: mapCamera.bottom,
+      position: mapCamera.position.clone(), quaternion: mapCamera.quaternion.clone(),
+    };
+    const half = mapViewExtent / mapCamera.zoom, c = mapControls.target;
+    Object.assign(mapCamera, { left: -half * aspect, right: half * aspect, top: half, bottom: -half });
+    mapCamera.updateProjectionMatrix();
+    mapCamera.position.set(c.x, 1000, c.z);
+    mapCamera.lookAt(c.x, 0, c.z);
+  } else {
+    activeCamera = miniCam;
+    const follow = S.eva || S.miniHalf !== null;
+    const half = S.miniHalf ?? miniDefaultHalf();
+    const c = (follow ? astro.position : toV(S.W / 2, S.H / 2, S.zmid)).clone();
+    c.x += S.miniOffset.x;
+    c.z += S.miniOffset.z;
+    Object.assign(miniCam, { left: -half * aspect, right: half * aspect, top: half, bottom: -half });
+    miniCam.updateProjectionMatrix();
+    miniCam.position.set(c.x, 20000, c.z);
+    miniCam.lookAt(c.x, 0, c.z);
+    const k = half * 0.045;
+    miniMe.position.set(astro.position.x, astro.position.y + 50, astro.position.z);
+    miniMe.rotation.y = S.walk.heading - Math.PI / 2;
+    miniMe.scale.setScalar(k);
+    miniGoal.visible = !!S.goal;
+    if (S.goal) { miniGoal.position.copy(groundV(S.goal.x, S.goal.y, 50)); miniGoal.scale.setScalar(k * 0.9); }
+    miniBase.position.copy(groundV(S.meta.base[0], S.meta.base[1], 50));
+    miniBase.scale.setScalar(k * 0.8);
+  }
   const fog = scene.fog, bg = scene.background;
   scene.fog = null;
   scene.background = MINI_BG;
@@ -1258,19 +1409,62 @@ function renderMini() {
   renderer.setScissorTest(true);
   renderer.setScissor(r.left, y, r.width, r.height);
   renderer.setViewport(r.left, y, r.width, r.height);
-  renderer.render(scene, miniCam);
+  renderer.render(scene, activeCamera);
   renderer.setScissorTest(false);
   renderer.setViewport(0, 0, host.clientWidth, host.clientHeight);
   scene.fog = fog;
   scene.background = bg;
+  if (savedCamera) {
+    Object.assign(mapCamera, { left: savedCamera.left, right: savedCamera.right, top: savedCamera.top, bottom: savedCamera.bottom });
+    mapCamera.position.copy(savedCamera.position);
+    mapCamera.quaternion.copy(savedCamera.quaternion);
+    mapCamera.updateProjectionMatrix();
+  }
 }
 
 const tabMap = $('tab-map');
-let mapDown = null;
-tabMap.addEventListener('pointerdown', (e) => (mapDown = [e.clientX, e.clientY]));
-tabMap.addEventListener('pointerup', (e) => {
-  if (!mapDown || Math.hypot(e.clientX - mapDown[0], e.clientY - mapDown[1]) > 5 || S.eva) return;
+let mapDown = null, mapLast = null, mapDragged = false;
+tabMap.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  mapDown = mapLast = [e.clientX, e.clientY];
+  mapDragged = false;
+  if (e.isTrusted && tabMap.setPointerCapture) tabMap.setPointerCapture(e.pointerId);
+});
+tabMap.addEventListener('pointermove', (e) => {
+  if (!mapDown || !mapLast || !(e.buttons & 1)) return;
+  const dx = e.clientX - mapLast[0], dy = e.clientY - mapLast[1];
+  if (Math.hypot(e.clientX - mapDown[0], e.clientY - mapDown[1]) > 5) mapDragged = true;
   const r = tabMap.getBoundingClientRect();
+  if (S.view === '2d' && mapCamera && mapControls) {
+    const worldPerPixel = (2 * mapViewExtent) / (mapCamera.zoom * r.height);
+    mapControls.target.x -= dx * worldPerPixel;
+    mapControls.target.z -= dy * worldPerPixel;
+    mapCamera.position.x -= dx * worldPerPixel;
+    mapCamera.position.z -= dy * worldPerPixel;
+    mapControls.update();
+  } else {
+    const worldPerPixel = (2 * (S.miniHalf ?? miniDefaultHalf())) / r.height;
+    S.miniOffset.x -= dx * worldPerPixel;
+    S.miniOffset.z -= dy * worldPerPixel;
+  }
+  mapLast = [e.clientX, e.clientY];
+});
+tabMap.addEventListener('pointerup', (e) => {
+  const clicked = !!mapDown && !mapDragged && Math.hypot(e.clientX - mapDown[0], e.clientY - mapDown[1]) <= 5;
+  mapDown = mapLast = null;
+  if (!clicked || S.eva) return;
+  const r = tabMap.getBoundingClientRect();
+  if (S.view === '2d' && mapCamera && mapControls) {
+    const worldPerPixel = (2 * mapViewExtent) / (mapCamera.zoom * r.height);
+    let worldX = mapControls.target.x + (e.clientX - r.left - r.width / 2) * worldPerPixel;
+    if (mapIsGlobal()) worldX = ((worldX % 360) + 360) % 360 - 180;
+    const worldZ = mapControls.target.z + (e.clientY - r.top - r.height / 2) * worldPerPixel;
+    const bounds = localGeoBounds();
+    const lon = worldX + 180, lat = -worldZ;
+    if (lon < bounds.west || lon > bounds.east || lat < bounds.south || lat > bounds.north) return;
+    setCustomGoal({ x: ((lon - bounds.west) / (bounds.east - bounds.west)) * S.W, y: ((lat - bounds.south) / (bounds.north - bounds.south)) * S.H });
+    return;
+  }
   const ray = new THREE.Raycaster();
   ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), miniCam);
   const hit = ray.intersectObject(terrainMesh)[0];
@@ -1278,10 +1472,18 @@ tabMap.addEventListener('pointerup', (e) => {
 });
 tabMap.addEventListener('wheel', (e) => {
   e.preventDefault();
+  if (S.view === '2d' && mapCamera) {
+    mapCamera.zoom = Math.max(mapControls.minZoom, Math.min(mapControls.maxZoom, mapCamera.zoom * (e.deltaY > 0 ? 1 / 1.2 : 1.2)));
+    mapCamera.updateProjectionMatrix();
+    return;
+  }
   const cur = S.miniHalf ?? miniDefaultHalf();
   S.miniHalf = Math.max(60, Math.min(Math.max(S.W, S.H) * 0.8, cur * (e.deltaY > 0 ? 1.2 : 1 / 1.2)));
 }, { passive: false });
-tabMap.addEventListener('dblclick', () => (S.miniHalf = null));
+tabMap.addEventListener('dblclick', () => {
+  if (S.view === '2d') overviewCamera();
+  else { S.miniHalf = null; S.miniOffset = { x: 0, z: 0 }; }
+});
 
 // ---- 平板閒置畫面：指南針 + 環境危險程度（顏色）+ 導航狀態
 let tabTimer = 0;
@@ -1294,6 +1496,8 @@ function updateTabBar(dt) {
   const bearing = (((90 - (w.heading * 180) / Math.PI) % 360) + 360) % 360;
   $('tb-ring').style.transform = `rotate(${-bearing}deg)`;
   $('tb-heading').textContent = `${String(Math.round(bearing) % 360).padStart(3, '0')}° ${DIR8[Math.round(bearing / 45) % 8]}`;
+  $('top-heading').textContent = $('tb-heading').textContent;
+  updateMapScale();
   // 腳下坡度 + 最近的禁止通行區（坡度 > 門檻或太粗糙）有多近
   const p = w.pos;
   let near = isHazard(p.x, p.y) ? 0 : Infinity;
@@ -1309,6 +1513,9 @@ function updateTabBar(dt) {
   const hz = $('tb-hazard');
   hz.className = `tb-hazard ${lvl}`;
   $('tb-haz-text').textContent = lvl === 'high' ? (near === 0 ? 'NO-GO' : 'HIGH') : lvl === 'mid' ? 'CAUTION' : 'LOW';
+  const topHazard = $('top-hazard');
+  topHazard.className = `terrain-status ${lvl}`;
+  $('top-hazard-text').textContent = `TERRAIN: ${$('tb-haz-text').textContent}`;
   hz.title = `slope ${slope.toFixed(0)}° · nearest no-go ${Number.isFinite(near) ? `≤ ${near} m` : '> 35 m'}`;
   const st = $('tb-status'), guide = $('tb-guide');
   if (e) {
@@ -1333,6 +1540,26 @@ function updateTabBar(dt) {
     guide.textContent = S.selected ? 'Tab / M — start the EVA on the tablet' : 'Tab / M — open Martian Map';
     $('tb-arrow').classList.add('hidden');
   }
+}
+
+function updateMapScale() {
+  const rect = $('tab-map').getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  let visibleWidthM;
+  if (S.view === '2d' && mapCamera) {
+    const degrees = (2 * mapViewExtent * (rect.width / rect.height)) / mapCamera.zoom;
+    visibleWidthM = degrees * 111_000 * Math.max(0.05, Math.cos(((mapControls.target.z * -1) * Math.PI) / 180));
+  } else {
+    const half = S.miniHalf ?? miniDefaultHalf();
+    visibleWidthM = 2 * half * (rect.width / rect.height);
+  }
+  const raw = visibleWidthM * 0.18;
+  const power = 10 ** Math.floor(Math.log10(Math.max(raw, 1)));
+  const candidates = [1, 2, 5, 10].map((n) => n * power);
+  const length = candidates.filter((n) => n <= raw && n >= raw * 0.45).at(-1) || candidates.filter((n) => n <= raw).at(-1) || candidates[0];
+  const px = Math.max(28, Math.min(86, (length / raw) * 72));
+  $('map-scale-bar').style.width = `${px.toFixed(0)}px`;
+  $('map-scale-value').textContent = length >= 1000 ? `${(length / 1000).toFixed(length % 1000 ? 1 : 0)} km` : `${Math.round(length)} m`;
 }
 
 // ---------------------------------------------------------------- 不歸點邊界（EVA 中自動顯示）
@@ -1417,18 +1644,35 @@ async function boot() {
   $('globe').onclick = () => toggleGlobe().catch((e) => log(`Globe failed: ${e.message}`, 'bad'));
 
   const sel = $('target');
+  sel.add(new Option('Choose a science target', ''), 0);
+  sel.value = '';
   for (const t of S.meta.targets) sel.add(new Option(`${t.name} (science ${t.science})`, t.id));
   sel.add(new Option('Custom (click map)', 'custom'));
   const pick = () => {
     const t = S.meta.targets.find((x) => x.id === sel.value);
-    if (!t) return;
+    if (!t) {
+      if (sel.value === 'custom') {
+        clearDestination();
+        $('target-desc').textContent = 'Custom destination selected. Tap a point on the map to set the goal.';
+      }
+      return;
+    }
     $('target-desc').textContent = t.desc;
     setGoal(t.x, t.y, t.name);
   };
   sel.onchange = pick;
-  pick();
 
   initWalker();
+  $('destination-summary').onclick = () => {
+    if (S.eva) return;
+    S.editingDestination = true;
+    updateSteps();
+    sel.focus();
+  };
+  $('destination-cancel').onclick = () => {
+    S.editingDestination = false;
+    updateSteps();
+  };
   $('cam-third').onclick = () => setCam('third');
   $('cam-first').onclick = () => setCam('first');
   $('cam-orbit').onclick = () => setCam('orbit');
@@ -1443,6 +1687,32 @@ async function boot() {
   $('deploy').onclick = deployBeacon;
   $('home').onclick = returnHome;
   $('reset').onclick = reset;
+  $('reset-eva').onclick = reset;
+  $('help').onclick = () => $('intro').classList.remove('hidden');
+  $('zoom-in').onclick = () => {
+    if (S.view === '2d' && mapCamera) {
+      mapCamera.zoom = Math.min(mapControls.maxZoom, mapCamera.zoom * 1.35);
+      mapCamera.updateProjectionMatrix();
+    } else {
+      const cur = S.miniHalf ?? miniDefaultHalf();
+      S.miniHalf = Math.max(60, Math.min(Math.max(S.W, S.H) * 0.8, cur / 1.35));
+    }
+  };
+  $('zoom-out').onclick = () => {
+    if (S.view === '2d' && mapCamera) {
+      mapCamera.zoom = Math.max(mapControls.minZoom, mapCamera.zoom / 1.35);
+      mapCamera.updateProjectionMatrix();
+    } else {
+      const cur = S.miniHalf ?? miniDefaultHalf();
+      S.miniHalf = Math.max(60, Math.min(Math.max(S.W, S.H) * 0.8, cur * 1.35));
+    }
+  };
+  $('recenter').onclick = () => {
+    S.miniHalf = null;
+    S.miniOffset = { x: 0, z: 0 };
+    if (S.view === '2d' || S.cam === 'orbit') overviewCamera();
+    else S.look = { yaw: 0, pitch: 0 };
+  };
   const th = S.meta.thresholds;
   $('source').innerHTML = `Terrain: ${S.meta.source}<br>No-go thresholds: slope &gt; ${th.slope_max_deg.toFixed(0)}°, roughness &gt; ${th.rough_max_m.toFixed(2)} m.<br>`
     + `Engine: ${api.kind === 'wasm' ? 'WebAssembly in this browser' : 'local mars-server'} — no network link required.<br>`
