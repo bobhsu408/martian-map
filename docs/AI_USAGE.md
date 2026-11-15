@@ -52,6 +52,7 @@ NASA Space Apps 規定提交時必須完整揭露 AI（官方稱 Super Intellige
 | 2026-11-15 04:40 | Claude Code (Claude Opus 5.5) | 修正抵達目標後無法移動；新增「與基地斷線」與「自行布設信標」（引擎 localize 支援 disabled / extra_beacons、幾何退化保護，新增測試；前端按鈕與 B 鍵） | 隊長提出斷線後布設信標、信標越多越準的定位設計；隊長試用時回報抵達後卡住 |
 | 2026-11-15 05:20 | Claude Code (Claude Opus 5.5) | 讓不歸點看得見：平板列「回頭倒數」（O₂ − 回程 − 預留）、EVA 中自動畫出 PNR 邊界紅點（主畫面＋小地圖，O₂ 充裕時隱藏） | 隊長試用後指出「感覺不到不歸點」，提出要能直觀看到 |
 | 2026-11-15 06:00 | Claude Code (Claude Opus 5.5) | 合併組員 map-development（英文 SI 紀錄、資料目錄、Codex 紀錄；保留會被舊版覆蓋掉的紀錄列）；撰寫英文提交內容初稿 engDocs/SUBMISSION.md、summary.md（Summary、Project Details、NASA 資料、References；SI 段落只列事實，留給團隊自己寫） | 隊長決定由 AI 起草英文提交內容（原分工為團隊自寫初稿）；內容依據團隊這兩天的設計決定與筆記，團隊負責審稿修改並自寫 SI 說明 |
+| 2026-11-15 | Antigravity AI | 閱讀現有前端 UI 結構，依四張參考圖提出平板面板改版計畫：包含任務頂欄、目的地與自訂點入口、路線卡、EVA 狀態與操作、More 分頁；並指出需檢查既有功能並保留有效互動。此紀錄依目前提供的 Antigravity 對話內容整理；該對話表示開始修改 `index.html`、`style.css`、`main.js`，但目前內容未包含可核對的實際差異或測試結果，因此不記為已驗證完成的實作 | 使用者提供四張參考設計圖與改版需求，要求只呈現已實作功能、保留既有能力、不修改 Python，並要求將 AI 與人類貢獻分開記錄；使用者負責提出產品方向、功能限制並提供參考圖 
 | 2026-11-15 | Codex | 依四張參考設計圖重整平板面板的 HTML／CSS／JavaScript：建立任務頂欄、目標選取卡、可選取的路線卡、EVA 氧氣與遙測格、任務／模擬事件控制，以及含 Map Layers、View、Map Extent、Mars Globe、View Distance、Sound & Vibration、Mission Log 的 More 側欄；把新版元件重新連接到既有目標、路徑規劃、EVA、定位、圖層與事件邏輯 | 使用者提供四張 UI 參考圖並指定對齊其資訊層級與視覺方向；確認圖中功能都應保留，要求不修改 Python、WASM 引擎或路徑規劃邏輯，並要求記錄 AI 與使用者的實際貢獻 |
 | 2026-11-15 | Codex | 調整 3D EVA 操作說明卡，將標題列改為可收合控制；修正按鈕樣式造成的標題列高度、內距與圖示排列問題；新增平板 Sites & Beacons 清單與場景標記，讓 Habitat、Rover、Relay、UWB、Science Stop 以場景座標錨定並依距離／點選顯示標籤；補充 2D 地圖中鍵拖曳平移、Hazards／PNR 網格圖樣，以及 Map Layers 面板相關介面調整 | 使用者指定標記種類與顯示方式，要求不加常駐 3D 側欄、Rover 不新增模型、標籤依距離或點選顯示，並要求圖示錨定 Three.js 實際座標；指出操作說明標題列變形並要求修正；要求恢復不需要的 Map Layers 面板配置；要求隱去介面上的 NASA 字樣。以上介面變更曾執行 `npm run build`，建置成功；未完成瀏覽器互動實測 |
 | 2026-11-15 18:45 | Claude Code (Claude Opus 5.5) | 整合組員 Antigravity-UI-development（新版平板 UI）與 map-development（SI 紀錄英譯）進 main；修正 e2e 腳本（先選目標再規劃），以瀏覽器實測規劃→EVA→落石重規劃全流程、無頁面錯誤 | 隊長要求繼續開發計劃並整理 GitHub 紀錄；UI 設計與實作為組員（Codex 協助）完成 |
@@ -59,4 +60,5 @@ NASA Space Apps 規定提交時必須完整揭露 AI（官方稱 Super Intellige
 | 2026-11-15 19:55 | Claude Code (Claude Opus 5.5) | 公開前掃描 repo 敏感資料（無）；撰寫 GitHub Pages 部署 workflow 並啟用 Pages；以線上網址跑 e2e（規劃、EVA、落石、導覽）通過；把 Demo／Repo 網址填入 SUBMISSION.md | 隊長決定公開 repo 並自行執行合併與公開設定 |
 | 2026-11-15 20:05 | Claude Code (Claude Opus 5.5) | 全專案檢查（Rust 測試、本機／線上 e2e、敏感資料、SI 標記）；為 8 個缺標記的 AI 產生檔案補上標記；修正 e2e_shots 腳本；依本紀錄起草 SUBMISSION.md 的 Use of SI 段落（註明 AI 起草、待團隊審閱）；撰寫開發日誌 docs/DEVLOG.md 並附 app 實際截圖 | 隊長要求完成 SI 段落與全專案檢查並整理開發日誌；團隊需審閱 SI 段落 |
 | 2026-11-15 20:15 | Claude Code (Claude Opus 5.5) | 將大會中文說明 PDF 壓縮檔移出公開 repo（保留本機、加入 .gitignore），更新開發日誌 | 隊長決定移除 |
+
 <!-- 之後每一步都往下新增一列 -->
