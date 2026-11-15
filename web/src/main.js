@@ -14,14 +14,15 @@ const MESH_STEP = 2; // 地形 mesh 取樣（2 → 4 m 網格）
 const EXAG = 1.3; // 垂直誇張
 const TIME_SCALE = 30; // 1 秒真實時間 = 30 秒任務時間
 const LOC_INTERVAL = 0.35; // 每 0.35 秒做一次定位
-const COLORS = { safe: '#3fd17a', balanced: '#f2c94c', science: '#bb6bd9', return: '#ff5a36' };
+// 路線選項以中性色呈現；只有目前選取的路線使用任務藍。
+const COLORS = { safe: '#95a0aa', balanced: '#95a0aa', science: '#95a0aa', return: '#1688d4' };
 const $ = (id) => document.getElementById(id);
 const api = createBackend();
 
 // ---------------------------------------------------------------- state
 const S = {
   meta: null, terr: null, hazard: null, slope: null, rough: null, W: 0, H: 0, zmid: 0,
-  goal: null, routes: {}, selected: null, obstacles: [], geo: null, region: null, globe: null, inGlobe: false,
+  goal: null, goalName: '', routes: {}, selected: null, obstacles: [], geo: null, region: null, globe: null, inGlobe: false,
   global: null, regional: null, hasGlobalMap: false,
   view: '3d', mapExtent: 'local', ortho: false,
   layers: {}, layerCache: {},
@@ -29,7 +30,7 @@ const S = {
   linkLost: false, deployed: [], // 和基地斷線、太空人自行布設的信標
   walk: null, // 太空人（EVA 前後也能自由走動）
   cam: 'third', look: { yaw: 0, pitch: 0 }, // 鏡頭：third / first / orbit
-  tabletUp: false, miniHalf: null, // 手持平板是否舉起、小地圖縮放
+  tabletUp: false, miniHalf: null, autopilot: true, pickingCustom: false, // 手持平板是否舉起、小地圖縮放
 };
 
 // ---------------------------------------------------------------- scene
@@ -300,10 +301,11 @@ async function applyLayers() {
 function buildLayerPanel() {
   const box = $('layers');
   for (const L of LAYERS) {
-    S.layers[L.id] = { on: false, opacity: L.mask ? 0.85 : 0.6 };
+    // 危險區是規劃安全資訊的一部分，預設顯示；其餘疊圖由使用者按需開啟。
+    S.layers[L.id] = { on: L.id === 'hazard', opacity: L.mask ? 0.65 : 0.6 };
     const row = document.createElement('div');
     row.className = 'layer-row';
-    row.innerHTML = `<input type="checkbox" id="ly-${L.id}"><label for="ly-${L.id}" class="check" style="margin:0">${L.name}</label><input type="range" min="0.1" max="1" step="0.05" value="${S.layers[L.id].opacity}" title="opacity">`;
+    row.innerHTML = `<input type="checkbox" id="ly-${L.id}" ${S.layers[L.id].on ? 'checked' : ''}><label for="ly-${L.id}" class="check" style="margin:0">${L.name}</label><input type="range" min="0.1" max="1" step="0.05" value="${S.layers[L.id].opacity}" title="opacity">`;
     const [cb, , op] = row.children;
     cb.onchange = () => { S.layers[L.id].on = cb.checked; applyLayers().catch((e) => log(e.message, 'bad')); };
     op.oninput = () => { S.layers[L.id].opacity = +op.value; if (S.layers[L.id].on) applyLayers(); };
@@ -407,6 +409,8 @@ function addBeaconMarker(b, color) {
 let goalMarker;
 function setGoal(x, y, name) {
   S.goal = { x, y };
+  S.goalName = name;
+  S.pickingCustom = false;
   if (!goalMarker) {
     goalMarker = new THREE.Mesh(new THREE.ConeGeometry(5, 14, 12), new THREE.MeshLambertMaterial({ color: '#ff7a3d', emissive: '#40150a' }));
     goalMarker.rotation.x = Math.PI;
@@ -496,15 +500,18 @@ function clearRoutes() {
 function selectRoute(key) {
   S.selected = key;
   for (const [k, r] of Object.entries(S.routes)) {
+    const color = k === key ? '#1688d4' : '#95a0aa';
+    r.mesh.material.color.set(color);
     r.mesh.material.opacity = k === key ? 1 : 0.25;
-    if (r.mesh.userData.mini) r.mesh.userData.mini.material.opacity = k === key ? 1 : 0.3;
-    if (r.mesh.userData.thin) r.mesh.userData.thin.visible = k === key;
+    if (r.mesh.userData.mini) { r.mesh.userData.mini.material.color.set(color); r.mesh.userData.mini.material.opacity = k === key ? 1 : 0.3; }
+    if (r.mesh.userData.thin) { r.mesh.userData.thin.material.color.set(color); r.mesh.userData.thin.visible = k === key; }
   }
   document.querySelectorAll('.route-card').forEach((c) => c.classList.toggle('selected', c.dataset.key === key));
   $('start').disabled = !key || !!S.eva;
   updateSteps();
 }
-const ROUTE_TAG = { safe: 'stays far from cliffs and boulders', balanced: 'shorter, moderate risk', science: 'shortest, accepts steeper ground' };
+const ROUTE_TAG = { safe: 'Lower risk, avoids steep terrain', balanced: 'Shorter with moderate risk', science: 'Shortest, accepts steeper terrain' };
+const ROUTE_NAME = { safe: 'Safe', balanced: 'Balanced', science: 'Science' };
 function card(key, r) {
   const div = document.createElement('div');
   div.className = 'route-card';
@@ -512,9 +519,9 @@ function card(key, r) {
   div.style.setProperty('--c', COLORS[key]);
   if (!r) { div.innerHTML = `<h3>${key}</h3><div>No traversable route</div>`; return div; }
   const risk = r.risk < 0.4 ? 'low' : r.risk < 0.7 ? 'medium' : 'high';
-  div.innerHTML = `<div class="line1"><h3>${key}</h3><span class="tag">${ROUTE_TAG[key]}</span></div>
-    <div class="stats">
-      <span>${(r.length_m / 1000).toFixed(2)} km · ${r.eta_min.toFixed(0)} min</span><span>Risk: <b>${risk}</b> (${(r.risk * 100).toFixed(0)}%)</span>
+  div.innerHTML = `<div class="route-main"><span class="route-radio" aria-hidden="true"></span><div><h3>${ROUTE_NAME[key]}</h3><span class="tag">${ROUTE_TAG[key]}</span></div></div>
+    <div class="stats route-stats">
+      <span>↔ ${(r.length_m / 1000).toFixed(2)} km</span><span>◷ ${r.eta_min.toFixed(0)} min</span><span>△ Risk ${(r.risk * 100).toFixed(0)}%</span>
     </div>
     <details><summary>details</summary>
       <div class="stats"><span>Max slope ${r.max_slope_deg.toFixed(0)}°</span><span>Closest hazard ${r.min_clearance_m.toFixed(0)} m</span><span>Dose ${r.dose_msv.toFixed(3)} mSv</span></div>
@@ -532,8 +539,31 @@ function updateSteps() {
   else if (planned && S.selected) { st('step1', 'done'); st('step2', 'done'); st('step3', 'current'); }
   else if (S.goal) { st('step1', 'done'); st('step2', 'current'); st('step3', 'locked'); }
   else { st('step1', 'current'); st('step2', 'locked'); st('step3', 'locked'); }
-  $('emergency').classList.toggle('hidden', !S.eva);
-  $('plan').textContent = planned ? 'Find routes again' : 'Find routes';
+  $('step1').classList.toggle('hidden', !!S.goal || !!S.eva);
+  $('step2').classList.toggle('hidden', !S.goal || !!S.eva);
+  $('step3').classList.toggle('hidden', !S.eva);
+  $('dest-header').classList.toggle('hidden', !S.goal || !!S.eva);
+  $('dest-name').textContent = S.goalName || 'Custom point';
+  $('info-card').classList.toggle('hidden', !!S.goal);
+  $('eva-header').classList.toggle('hidden', !S.eva);
+  $('o2-bar-wrap').classList.toggle('hidden', !S.eva);
+  $('metrics-grid').classList.toggle('hidden', !S.eva);
+  $('mission-actions').classList.toggle('hidden', !S.eva);
+  $('sim-events').classList.toggle('hidden', !S.eva);
+  $('plan').textContent = planned ? 'Calculate routes again' : 'Calculate routes';
+  if (S.eva) $('eva-route-label').textContent = `To ${S.goalName || 'target'} · ${ROUTE_NAME[S.eva.routeKey] || S.eva.routeKey} route`;
+}
+
+function selectMoreTab(id) {
+  document.querySelectorAll('.more-tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === id));
+  document.querySelectorAll('.more-pane').forEach((pane) => pane.classList.toggle('active', pane.id === id));
+}
+function openMore(id = 'tab-layers') {
+  selectMoreTab(id);
+  $('more-overlay').classList.remove('hidden');
+}
+function closeMore() {
+  $('more-overlay').classList.add('hidden');
 }
 
 async function planRoutes() {
@@ -602,7 +632,7 @@ function startEva() {
   estMarker.visible = true;
   applyFog();
   $('hud').classList.remove('hidden');
-  setTablet(false);
+  setTablet(true);
   ['start', 'plan'].forEach((id) => ($(id).disabled = true));
   ['rockfall', 'leak', 'drift', 'home', 'linkloss', 'deploy'].forEach((id) => ($(id).disabled = false));
   placeAstronaut();
@@ -613,7 +643,7 @@ function startEva() {
     camera.position.set(p.x - Math.cos(S.eva.heading) * 60, p.y + 35, p.z + Math.sin(S.eva.heading) * 60);
   }
   updateSteps();
-  log(`EVA started on ${S.selected} route — ${$('autopilot').checked ? 'autopilot' : 'manual control (W/A/S/D)'}`, 'ok');
+  log(`EVA started on ${S.selected} route — ${S.autopilot ? 'autopilot' : 'manual control (W/A/S/D)'}`, 'ok');
   showAlert(`EVA IN PROGRESS · ${S.selected.toUpperCase()} ROUTE`, true, 2500);
 }
 
@@ -638,7 +668,7 @@ function evaTick(dt) {
   // ---- 控制：自動駕駛（朝導引點）或鍵盤
   let turn = 0, fwd = 0;
   const paused = e.drift || performance.now() < (e.pauseUntil || 0); // 漂移後停下來重新定向
-  if ($('autopilot').checked && e.nav && !e.replanning && !paused) {
+  if (S.autopilot && e.nav && !e.replanning && !paused) {
     const want = Math.atan2(e.nav.next[1] - e.est.y, e.nav.next[0] - e.est.x);
     let d = want - e.heading;
     d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -738,21 +768,30 @@ function drawLocalization(loc) {
 
 function updateHud() {
   const e = S.eva, n = e.nav, loc = e.loc, reserve = S.meta.params.o2_reserve_min;
-  $('g-time').textContent = `${e.t.toFixed(0)} min`;
-  $('g-o2').textContent = `${e.o2.toFixed(0)} min`;
+  const capacity = S.meta.params.o2_capacity_min || 1;
+  const o2Pct = Math.max(0, Math.min(100, (e.o2 / capacity) * 100));
+  $('o2-value').textContent = `${e.o2.toFixed(0)} min`;
+  $('o2-pct').textContent = `${o2Pct.toFixed(0)}%`;
+  $('o2-fill').style.width = `${o2Pct}%`;
   if (loc) {
-    $('g-pos').textContent = `± ${loc.sigma_m < 10 ? loc.sigma_m.toFixed(1) : loc.sigma_m.toFixed(0)} m`;
-    $('g-bcn').textContent = `${loc.visible_beacons.length} · ${loc.mode === 'multilateration' ? 'multilat' : 'dead reck.'}`;
+    $('m-poserr').textContent = `± ${loc.sigma_m < 10 ? loc.sigma_m.toFixed(1) : loc.sigma_m.toFixed(0)} m`;
+    $('m-beacons').textContent = `${loc.visible_beacons.length}`;
   }
   if (!n) return;
   const tRet = n.t_return_min;
-  $('g-ret').textContent = Number.isFinite(tRet) ? `${tRet.toFixed(0)} min` : '—';
+  $('m-return').textContent = Number.isFinite(tRet) ? `${tRet.toFixed(0)} min` : '—';
   const mustReturn = !e.returning && Number.isFinite(tRet) && e.o2 < tRet + reserve + 10;
   e.margin = Number.isFinite(tRet) ? e.o2 - tRet - reserve : null; // 還能往外走多久才必須回頭
   if (mustReturn && !e.raisedForReturn) { e.raisedForReturn = true; setTablet(true); }
   const clr = n.clearance_m;
-  $('g-safe').textContent = e.blocked ? 'NO-GO ahead' : clr >= 20 ? 'safe' : clr >= 8 ? `caution ${clr.toFixed(0)} m` : `hazard ${clr.toFixed(0)} m`;
-  $('g-safe').style.color = e.blocked || clr < 8 ? 'var(--bad)' : clr < 20 ? 'var(--warn)' : 'var(--ok)';
+  const terrain = e.blocked ? 'NO-GO ahead' : clr >= 20 ? 'Safe' : clr >= 8 ? `Caution ${clr.toFixed(0)} m` : `Hazard ${clr.toFixed(0)} m`;
+  const terrainClass = e.blocked || clr < 8 ? 'bad' : clr < 20 ? 'warn' : 'safe';
+  $('m-terrain').textContent = terrain;
+  $('m-terrain').className = `metric-val ${terrainClass}`;
+  $('g-dist').textContent = `${(n.remaining_m / 1000).toFixed(2)} km`;
+  const eta = e.route.eta_min * (n.remaining_m / Math.max(e.route.length_m, 1));
+  $('g-time').textContent = `${eta.toFixed(0)} min`;
+  $('g-elev').textContent = `${heightAt(e.est.x, e.est.y).toFixed(0)} m`;
 
   // 狀態列 + 回饋
   const pill = $('status-pill');
@@ -1206,6 +1245,7 @@ function setTablet(up) {
   const t = $('tablet');
   t.classList.toggle('raised', up);
   t.classList.toggle('lowered', !up);
+  if (!up) closeMore();
   if (!up && document.activeElement && t.contains(document.activeElement)) document.activeElement.blur();
   if (up && S.eva) $('step3').scrollIntoView({ block: 'start' }); // EVA 中：直接看到緊急按鈕
   keys.clear();
@@ -1310,11 +1350,7 @@ function updateTabBar(dt) {
   hz.className = `tb-hazard ${lvl}`;
   $('tb-haz-text').textContent = lvl === 'high' ? (near === 0 ? 'NO-GO' : 'HIGH') : lvl === 'mid' ? 'CAUTION' : 'LOW';
   hz.title = `slope ${slope.toFixed(0)}° · nearest no-go ${Number.isFinite(near) ? `≤ ${near} m` : '> 35 m'}`;
-  const st = $('tb-status'), guide = $('tb-guide');
   if (e) {
-    st.textContent = $('status-pill').textContent;
-    st.className = $('status-pill').className;
-    guide.innerHTML = $('compass-text').innerHTML.replace('<br>', ' · ');
     $('tb-arrow').classList.remove('hidden');
     // 回頭倒數：剩餘 O₂ − 回程時間 − 安全預留
     const pn = $('tb-pnr'), m = e.margin;
@@ -1325,12 +1361,9 @@ function updateTabBar(dt) {
       pn.className = `tb-pnr ${m <= 10 ? 'high' : m <= 45 ? 'mid' : 'low'}`;
       $('tb-pnr-text').textContent = m <= 0 ? 'TURN BACK NOW' : `${m.toFixed(0)} min`;
     }
-    $('g-turn').textContent = e.returning ? '—' : m == null ? '—' : m <= 0 ? 'NOW' : `${m.toFixed(0)} min`;
+    $('m-turnback').textContent = e.returning ? '—' : m == null ? '—' : m <= 0 ? 'NOW' : `${m.toFixed(0)} min`;
   } else {
     $('tb-pnr').classList.add('hidden');
-    st.className = '';
-    st.textContent = S.selected ? 'ROUTE READY' : 'FREE WALK';
-    guide.textContent = S.selected ? 'Tab / M — start the EVA on the tablet' : 'Tab / M — open Martian Map';
     $('tb-arrow').classList.add('hidden');
   }
 }
@@ -1400,6 +1433,7 @@ async function boot() {
   addMarkers();
   overviewCamera();
   buildLayerPanel();
+  applyLayers().catch((e) => log(`Default hazard layer unavailable: ${e.message}`, 'warn'));
   if (S.geo) {
     try {
       S.region = await buildRegion(S.geo, toV, S.W, S.H);
@@ -1417,22 +1451,43 @@ async function boot() {
   $('globe').onclick = () => toggleGlobe().catch((e) => log(`Globe failed: ${e.message}`, 'bad'));
 
   const sel = $('target');
+  sel.add(new Option('Choose a science target', ''));
   for (const t of S.meta.targets) sel.add(new Option(`${t.name} (science ${t.science})`, t.id));
   sel.add(new Option('Custom (click map)', 'custom'));
   const pick = () => {
     const t = S.meta.targets.find((x) => x.id === sel.value);
+    if (sel.value === 'custom') {
+      S.pickingCustom = true;
+      $('target-desc').textContent = 'Click a safe point on the map to set a custom destination.';
+      return;
+    }
     if (!t) return;
     $('target-desc').textContent = t.desc;
     setGoal(t.x, t.y, t.name);
   };
   sel.onchange = pick;
-  pick();
+  $('btn-science').onclick = () => {
+    sel.focus();
+    if (typeof sel.showPicker === 'function') sel.showPicker();
+  };
+  $('btn-custom').onclick = () => {
+    sel.value = 'custom';
+    pick();
+  };
+  $('dest-change').onclick = () => {
+    clearRoutes();
+    $('routes').innerHTML = '';
+    S.goal = null; S.goalName = ''; S.selected = null; S.pickingCustom = false;
+    sel.value = '';
+    $('target-desc').textContent = '';
+    updateSteps();
+  };
 
   initWalker();
   $('cam-third').onclick = () => setCam('third');
   $('cam-first').onclick = () => setCam('first');
   $('cam-orbit').onclick = () => setCam('orbit');
-  $('tab-bar').onclick = () => setTablet(!S.tabletUp);
+  $('tab-bar').onclick = (e) => { if (!e.target.closest('button')) setTablet(!S.tabletUp); };
   setCam('third');
   $('plan').onclick = planRoutes;
   $('start').onclick = startEva;
@@ -1443,6 +1498,17 @@ async function boot() {
   $('deploy').onclick = deployBeacon;
   $('home').onclick = returnHome;
   $('reset').onclick = reset;
+  $('autopilot-btn').onclick = () => {
+    S.autopilot = !S.autopilot;
+    $('autopilot-btn').classList.toggle('active', S.autopilot);
+    $('autopilot-btn').innerHTML = S.autopilot ? '<span>⏸</span> Autopilot' : '<span>▶</span> Autopilot off';
+    log(`Autopilot ${S.autopilot ? 'enabled' : 'disabled'}`, S.autopilot ? 'ok' : 'warn');
+  };
+  document.querySelectorAll('.more-tab').forEach((tab) => { tab.onclick = () => selectMoreTab(tab.dataset.tab); });
+  $('more-btn').onclick = () => openMore();
+  $('more-back').onclick = closeMore;
+  $('more-close').onclick = closeMore;
+  $('map-layers-btn').onclick = () => openMore('tab-layers');
   const th = S.meta.thresholds;
   $('source').innerHTML = `Terrain: ${S.meta.source}<br>No-go thresholds: slope &gt; ${th.slope_max_deg.toFixed(0)}°, roughness &gt; ${th.rough_max_m.toFixed(2)} m.<br>`
     + `Engine: ${api.kind === 'wasm' ? 'WebAssembly in this browser' : 'local mars-server'} — no network link required.<br>`

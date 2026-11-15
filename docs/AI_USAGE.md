@@ -52,4 +52,5 @@ NASA Space Apps 規定提交時必須完整揭露 AI（官方稱 Super Intellige
 | 2026-11-15 04:40 | Claude Code (Claude Opus 5.5) | 修正抵達目標後無法移動；新增「與基地斷線」與「自行布設信標」（引擎 localize 支援 disabled / extra_beacons、幾何退化保護，新增測試；前端按鈕與 B 鍵） | 隊長提出斷線後布設信標、信標越多越準的定位設計；隊長試用時回報抵達後卡住 |
 | 2026-11-15 05:20 | Claude Code (Claude Opus 5.5) | 讓不歸點看得見：平板列「回頭倒數」（O₂ − 回程 − 預留）、EVA 中自動畫出 PNR 邊界紅點（主畫面＋小地圖，O₂ 充裕時隱藏） | 隊長試用後指出「感覺不到不歸點」，提出要能直觀看到 |
 | 2026-11-15 06:00 | Claude Code (Claude Opus 5.5) | 合併組員 map-development（英文 SI 紀錄、資料目錄、Codex 紀錄；保留會被舊版覆蓋掉的紀錄列）；撰寫英文提交內容初稿 engDocs/SUBMISSION.md、summary.md（Summary、Project Details、NASA 資料、References；SI 段落只列事實，留給團隊自己寫） | 隊長決定由 AI 起草英文提交內容（原分工為團隊自寫初稿）；內容依據團隊這兩天的設計決定與筆記，團隊負責審稿修改並自寫 SI 說明 |
+| 2026-11-15 | Codex | 依四張參考設計圖重整平板面板的 HTML／CSS／JavaScript：建立任務頂欄、目標選取卡、可選取的路線卡、EVA 氧氣與遙測格、任務／模擬事件控制，以及含 Map Layers、View、Map Extent、Mars Globe、View Distance、Sound & Vibration、Mission Log 的 More 側欄；把新版元件重新連接到既有目標、路徑規劃、EVA、定位、圖層與事件邏輯 | 使用者提供四張 UI 參考圖並指定對齊其資訊層級與視覺方向；確認圖中功能都應保留，要求不修改 Python、WASM 引擎或路徑規劃邏輯，並要求記錄 AI 與使用者的實際貢獻 |
 <!-- 之後每一步都往下新增一列 -->

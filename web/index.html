@@ -32,126 +32,213 @@
     </div>
 
     <div id="tablet" class="lowered">
+      <!-- ==================== TOP BAR ==================== -->
       <div class="tab-bar" id="tab-bar" title="Tab / M — raise or lower the tablet">
+        <div class="tb-brand">
+          <div class="tb-logo">⟋</div>
+          <div><div class="tb-title">MARS EVA PLANNER</div><div class="tb-sub">OFFLINE EVA NAVIGATION &amp; MISSION PLANNING</div></div>
+        </div>
         <div class="tb-compass"><div id="tb-dial"><div id="tb-ring"><span class="cn">N</span><span class="ce">E</span><span class="cs">S</span><span class="cw">W</span></div></div><div id="tb-heading">000° N</div></div>
-        <div class="tb-mid"><div id="tb-status">FREE WALK</div><div id="tb-guide">Tab / M — open Martian Map</div></div>
-        <div id="tb-arrow" class="hidden">▲</div>
+        <div class="badge" id="badge">● OFFLINE - ON-BOARD COMPUTE</div>
         <div class="tb-pnr hidden" id="tb-pnr" title="Minutes you can keep going out before you must turn back (O₂ left − return time − reserve)"><span>Turn back in</span><b id="tb-pnr-text">—</b></div>
-        <div class="tb-hazard" id="tb-hazard"><span>Terrain danger</span><b id="tb-haz-text">—</b></div>
+        <div class="tb-hazard" id="tb-hazard"><span>⚠ TERRAIN DANGER</span><b id="tb-haz-text">—</b></div>
+        <div id="tb-arrow" class="hidden">▲</div>
+        <button class="lang-btn tb-lang" type="button">中文</button>
       </div>
+
+      <!-- ==================== BODY (raised only) ==================== -->
       <div class="tab-body">
     <aside id="panel">
-      <header>
-        <h1>MARTIAN MAP <button class="lang-btn" type="button">中文</button></h1>
-        <div class="sub">Offline EVA planner for Mars astronauts</div>
-        <div class="badge" id="badge">● OFFLINE · ON-BOARD COMPUTE</div>
-      </header>
+      <!-- ===== STEP 1: WHERE TO? ===== -->
+      <section class="step" id="step1">
+        <div class="panel-section-label">MISSION PLANNER</div>
+        <div class="step-title"><span class="num">1</span> Where to?</div>
+        <select id="target" class="target-select"></select>
+        <div class="big-btns">
+          <button id="btn-science" class="big-btn" type="button">
+            <span class="big-icon" aria-hidden="true">⚗</span>
+            <span>Scientific<br>Target</span>
+          </button>
+          <button id="btn-custom" class="big-btn" type="button">
+            <span class="big-icon" aria-hidden="true">⌖</span>
+            <span>Custom<br>Point</span>
+          </button>
+        </div>
+        <div id="target-desc" class="desc"></div>
+        <div class="info-card" id="info-card">
+          <span class="info-icon">ⓘ</span>
+          <div>
+            <b>Select a destination to continue.</b><br>
+            Route planning unlocks after destination selection.
+          </div>
+        </div>
+      </section>
 
-      <div class="cam-row" role="group" aria-label="Camera">
-        <button id="cam-third" type="button" class="view-button active">3rd person</button>
-        <button id="cam-first" type="button" class="view-button">1st person</button>
-        <button id="cam-orbit" type="button" class="view-button">Overview</button>
+      <!-- ===== STEP 2: ROUTES ===== -->
+      <section class="step" id="step2">
+        <div id="dest-header" class="dest-header hidden">
+          <span class="dest-icon" aria-hidden="true">⚗</span>
+          <div>
+            <div class="dest-label">Destination</div>
+            <div class="dest-name" id="dest-name">—</div>
+          </div>
+          <button id="dest-change" class="dest-change" type="button" title="Change destination">›</button>
+        </div>
+        <div class="step-title route-title">Routes</div>
+        <button id="plan" class="primary">Calculate routes</button>
+        <div id="routes"></div>
+        <button id="start" class="primary start-eva-btn" disabled>▶ Start EVA</button>
+      </section>
+
+      <!-- ===== STEP 3: EVA ===== -->
+      <section class="step" id="step3">
+        <div id="eva-header" class="eva-header hidden">
+          <span class="eva-dot">●</span>
+          <div>
+            <div class="eva-status-title">EVA — ON ROUTE</div>
+            <div class="eva-status-sub" id="eva-route-label">—</div>
+          </div>
+        </div>
+
+        <!-- O₂ bar -->
+        <div id="o2-bar-wrap" class="o2-bar-wrap hidden">
+          <div class="o2-label">O₂</div>
+          <div class="o2-value" id="o2-value">— min</div>
+          <div class="o2-track"><div class="o2-fill" id="o2-fill" style="width:100%"></div></div>
+          <div class="o2-pct" id="o2-pct">—%</div>
+        </div>
+
+        <!-- 6-cell metrics grid -->
+        <div id="metrics-grid" class="metrics-grid hidden">
+          <div class="metric-cell"><span class="metric-icon">↩</span><span class="metric-label">Return (est.)</span><b id="m-return" class="metric-val">— min</b></div>
+          <div class="metric-cell"><span class="metric-icon">⏱</span><span class="metric-label">Turn back in</span><b id="m-turnback" class="metric-val">—</b></div>
+          <div class="metric-cell"><span class="metric-icon">⊙</span><span class="metric-label">Position error</span><b id="m-poserr" class="metric-val">± — m</b></div>
+          <div class="metric-cell"><span class="metric-icon">📡</span><span class="metric-label">Visible beacons</span><b id="m-beacons" class="metric-val">—</b></div>
+          <div class="metric-cell"><span class="metric-icon">⛰</span><span class="metric-label">Terrain</span><b id="m-terrain" class="metric-val safe">—</b></div>
+        </div>
+
+        <!-- Mission Actions -->
+        <div id="mission-actions" class="hidden">
+          <div class="sub-title">Mission Actions</div>
+          <div class="action-grid">
+            <button id="autopilot-btn" class="action-btn active" type="button"><span>⏸</span> Autopilot</button>
+            <button id="deploy" disabled type="button"><span>📍</span> Deploy Beacon [B]</button>
+            <button id="home" disabled type="button"><span>↩</span> Return to Base</button>
+            <button id="reset" class="ghost" type="button"><span>↺</span> Start Over</button>
+          </div>
+        </div>
+
+        <!-- Simulation Events -->
+        <div id="sim-events" class="hidden">
+          <div class="sub-title">Simulation (EVA Events) <span class="sub-info" title="Trigger test scenarios to see how the system responds">ⓘ</span></div>
+          <div class="action-grid">
+            <button id="drift" disabled title="Crew slips 45 m off the route"><span>↯</span> Drift off route</button>
+            <button id="rockfall" disabled title="A rockfall blocks the path ahead"><span>⚠</span> Rockfall</button>
+            <button id="leak" disabled title="Suit oxygen leak"><span>💨</span> O₂ leak</button>
+            <button id="linkloss" disabled title="Habitat, rover and relay beacons go silent"><span>📡</span> Lose base link</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== MORE (overlay panel) ===== -->
+      <div id="more-overlay" class="more-overlay hidden">
+        <div class="more-header">
+          <button id="more-back" type="button" class="more-back">‹ More</button>
+          <button id="more-close" type="button" class="more-close">✕</button>
+        </div>
+        <div class="more-body">
+          <nav class="more-tabs">
+            <button class="more-tab active" data-tab="tab-layers"><span>🗺</span> Map Layers</button>
+            <button class="more-tab" data-tab="tab-view"><span>👁</span> View</button>
+            <button class="more-tab" data-tab="tab-extent"><span>📐</span> Map Extent</button>
+            <button class="more-tab" data-tab="tab-globe"><span>🌍</span> Mars Globe</button>
+            <button class="more-tab" data-tab="tab-vdist"><span>🔭</span> View Distance</button>
+            <button class="more-tab" data-tab="tab-feedback"><span>🔊</span> Sound &amp; Vibration</button>
+            <button class="more-tab" data-tab="tab-log"><span>📋</span> Mission Log</button>
+          </nav>
+          <div class="more-content">
+            <!-- Map Layers -->
+            <div class="more-pane active" id="tab-layers">
+              <h3>Map Layers</h3>
+              <p class="pane-desc">Overlay terrain and mission information on the map.</p>
+              <div id="layers"></div>
+              <div id="legend-box"></div>
+            </div>
+            <!-- View -->
+            <div class="more-pane" id="tab-view">
+              <h3>View</h3>
+              <div class="cam-row" role="group" aria-label="Camera">
+                <button id="cam-third" type="button" class="view-button active">3rd person</button>
+                <button id="cam-first" type="button" class="view-button">1st person</button>
+                <button id="cam-orbit" type="button" class="view-button">Overview</button>
+              </div>
+              <div id="view-switch" class="view-switch" role="group" aria-label="Map view mode" style="margin-top:12px">
+                <button id="view-3d" type="button" class="view-button active" aria-pressed="true">3D terrain</button>
+                <button id="view-2d" type="button" class="view-button" aria-pressed="false">2D map</button>
+              </div>
+              <div id="view-hint" class="hint" style="margin-top:8px">Drag to orbit · wheel to zoom</div>
+            </div>
+            <!-- Map Extent -->
+            <div class="more-pane" id="tab-extent">
+              <h3>Map Extent</h3>
+              <div id="extent-switch" class="view-switch" role="group" aria-label="Map extent">
+                <button id="extent-local" type="button" class="view-button active" aria-pressed="true">Mount Sharp</button>
+                <button id="extent-global" type="button" class="view-button" aria-pressed="false">Mars global (2D)</button>
+                <button id="extent-regional" type="button" class="view-button" aria-pressed="false">Gale (MOC)</button>
+              </div>
+            </div>
+            <!-- Mars Globe -->
+            <div class="more-pane" id="tab-globe">
+              <h3>Mars Globe</h3>
+              <button id="globe">🌍 Mars globe (MOLA)</button>
+            </div>
+            <!-- View Distance -->
+            <div class="more-pane" id="tab-vdist">
+              <h3>View Distance <span id="vd-text"></span></h3>
+              <input type="range" id="view-dist" min="0" max="6" step="1" value="2" />
+              <div class="hint">Far views show the whole Gale crater (NASA MOLA, 463 m).</div>
+            </div>
+            <!-- Sound & Vibration -->
+            <div class="more-pane" id="tab-feedback">
+              <h3>Sound &amp; Vibration</h3>
+              <div class="row toggles">
+                <label class="check"><input type="checkbox" id="opt-sound" checked /> 🔊 Sound</label>
+                <label class="check"><input type="checkbox" id="opt-vibe" checked /> 📳 Vibration</label>
+              </div>
+              <div class="hint" style="margin-top:8px">1 pulse = steer left · 2 pulses = steer right · faster = further off route · long buzz = hazard · SOS = return now</div>
+            </div>
+            <!-- Mission Log -->
+            <div class="more-pane" id="tab-log">
+              <h3>Mission Log</h3>
+              <div id="log"></div>
+            </div>
+          </div>
+        </div>
+        <footer id="source"></footer>
       </div>
 
-      <section class="step" id="step1">
-        <div class="step-title"><span class="num">1</span> Where to?</div>
-        <select id="target"></select>
-        <div class="hint">…or click the map on the right (wheel to zoom, double-click to reset).</div>
-        <div id="target-desc" class="desc"></div>
-      </section>
+      <!-- More toggle button (at panel bottom) -->
+      <div class="more-toggle" id="more-toggle">
+        <button id="more-btn" type="button">⚙ More <span class="chevron">⌄</span></button>
+      </div>
 
-      <section class="step" id="step2">
-        <div class="step-title"><span class="num">2</span> Choose a route</div>
-        <button id="plan" class="primary">Find routes</button>
-        <div id="routes"></div>
-      </section>
-
-      <section class="step" id="step3">
-        <div class="step-title"><span class="num">3</span> Go on EVA</div>
-        <button id="start" class="primary" disabled>▶ Start EVA</button>
-        <label class="check"><input type="checkbox" id="autopilot" checked /> Autopilot (walk the route for me)</label>
-        <div class="hint">Lower the tablet (Tab / M) to watch. Manual: W / ↑ forward · A D / ← → turn · S / ↓ back · drag to look</div>
-        <div id="emergency" class="hidden">
-          <div class="sub-title">Try an emergency</div>
-          <div class="row">
-            <button id="drift" disabled title="Crew slips 45 m off the route">↯ Drift off route</button>
-            <button id="rockfall" disabled title="A rockfall blocks the path ahead">⚠ Rockfall</button>
-          </div>
-          <div class="row">
-            <button id="leak" disabled title="Suit oxygen leak">O₂ leak</button>
-            <button id="home" disabled title="Plan the safest way back">⌂ Return to base</button>
-          </div>
-          <div class="row">
-            <button id="linkloss" disabled title="Habitat, rover and relay beacons go silent">📡 Lose base link</button>
-            <button id="deploy" disabled title="Drop a UWB beacon here (key B)">📍 Deploy beacon (4 left)</button>
-          </div>
-          <div class="hint">Position fix needs ≥ 3 beacons in line of sight — more beacons, smaller error circle. Fewer than 3 → dead reckoning, error grows as you walk.</div>
-        </div>
-        <button id="reset" class="ghost">↺ Start over</button>
-      </section>
-
-      <section>
-        <div class="sub-title">Mission log</div>
-        <div id="log"></div>
-      </section>
-
-      <details id="more">
-        <summary>⚙ More: map layers, 2D map, whole Mars, feedback</summary>
-
-        <div class="more-block">
-          <label>Map layers (stack several)</label>
-          <div id="layers"></div>
-          <div id="legend-box"></div>
-        </div>
-
-        <div class="more-block">
-          <label>View</label>
-          <div id="view-switch" class="view-switch" role="group" aria-label="Map view mode">
-            <button id="view-3d" type="button" class="view-button active" aria-pressed="true">3D terrain</button>
-            <button id="view-2d" type="button" class="view-button" aria-pressed="false">2D map</button>
-          </div>
-          <div id="extent-switch" class="view-switch" role="group" aria-label="Map extent" style="margin-top:6px">
-            <button id="extent-local" type="button" class="view-button active" aria-pressed="true">Mount Sharp</button>
-            <button id="extent-global" type="button" class="view-button" aria-pressed="false">Mars global (2D)</button>
-            <button id="extent-regional" type="button" class="view-button" aria-pressed="false">Gale (MOC)</button>
-          </div>
-          <div id="view-hint" class="hint">Drag to orbit · wheel to zoom</div>
-          <button id="globe" style="margin-top:6px">🌍 Mars globe (3D)</button>
-        </div>
-
-        <div class="more-block">
-          <label>View distance <span id="vd-text"></span></label>
-          <input type="range" id="view-dist" min="0" max="6" step="1" value="2" />
-          <div class="hint">Far views show the whole Gale crater (NASA MOLA, 463 m).</div>
-        </div>
-
-        <div class="more-block">
-          <label>Guidance feedback</label>
-          <div class="row toggles">
-            <label class="check"><input type="checkbox" id="opt-sound" checked /> 🔊 Sound</label>
-            <label class="check"><input type="checkbox" id="opt-vibe" checked /> 📳 Vibration</label>
-          </div>
-          <div class="hint">1 pulse = steer left · 2 pulses = steer right · faster = further off route · long buzz = hazard · SOS = return now</div>
-        </div>
-
-        <footer id="source"></footer>
-      </details>
     </aside>
+
+    <!-- ===== RIGHT SIDE: map + HUD ===== -->
     <div class="tab-right">
-      <div id="tab-map"><div class="map-note">Martian Map · on-board · north up</div></div>
+      <div id="tab-map">
+        <div class="map-note">Martian Map · on-board · north up</div>
+        <button id="map-layers-btn" class="map-layers-btn" type="button">≋&nbsp; Map Layers</button>
+      </div>
 
     <!-- EVA heads-up display -->
     <div id="hud" class="hidden">
       <div id="status-pill">ON ROUTE</div>
       <div id="compass"><div id="arrow">▲</div><div id="compass-text">—</div></div>
       <div class="hud-grid">
-        <div><span>EVA time</span><b id="g-time">0 min</b></div>
-        <div><span>O₂ left</span><b id="g-o2">— min</b></div>
-        <div><span>Return needs</span><b id="g-ret">— min</b></div>
-        <div><span>Position</span><b id="g-pos">± — m</b></div>
-        <div><span>Beacons</span><b id="g-bcn">—</b></div>
-        <div><span>Terrain</span><b id="g-safe">—</b></div>
-        <div><span>Turn back in</span><b id="g-turn">—</b></div>
+        <div><span>Distance</span><b id="g-dist">—</b></div>
+        <div><span>ETA</span><b id="g-time">0 min</b></div>
+        <div><span>Elevation</span><b id="g-elev">—</b></div>
       </div>
       <div id="haptic" class="haptic idle">📳 quiet — on route</div>
     </div>
