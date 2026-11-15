@@ -246,6 +246,37 @@
       </div>
     </div>
 
+    <!-- 收起任務平板後的 3D EVA 疊層；所有數值由現有定位與地形狀態更新。 -->
+    <section id="sim-ui" aria-label="EVA simulation heads-up display">
+      <header class="sim-topbar">
+        <div class="sim-brand">
+          <span class="sim-logo" aria-hidden="true"></span>
+          <div><strong>MARS EVA PLANNER</strong><span>EVA SIMULATION MODE</span></div>
+        </div>
+        <div class="sim-statuses">
+          <div class="sim-status operational">●&nbsp; OFFLINE · ON-BOARD COMPUTE</div>
+          <div class="sim-status terrain low" id="sim-hazard">△&nbsp; <span id="sim-hazard-text">TERRAIN: LOW</span></div>
+          <button class="lang-btn sim-lang" type="button">中文</button>
+          <button id="sim-help" class="sim-help" type="button" title="Open controls help">?</button>
+        </div>
+      </header>
+
+      <aside class="sim-controls" aria-label="EVA controls">
+        <h2><span aria-hidden="true">⚑</span> EVA SIMULATION</h2>
+        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move</span></div>
+        <div><span class="control-icon" aria-hidden="true">◉</span><span>Drag</span><span>Look around</span></div>
+        <div><kbd>Tab</kbd><span>/</span><kbd>M</kbd><span>Open tablet</span></div>
+        <div><kbd>V</kbd><span>Switch view (1st / 3rd)</span></div>
+      </aside>
+
+      <footer class="sim-bottom-hud">
+        <div class="sim-heading"><span class="sim-compass" aria-hidden="true">▲</span><b id="sim-heading">000° N</b></div>
+        <div class="sim-value"><span>⌖</span><div><small>Current Position</small><b id="sim-position">—</b></div></div>
+        <div class="sim-value"><span>△</span><div><small>Terrain</small><b id="sim-terrain">Low Risk</b></div></div>
+        <button id="sim-open-tablet" type="button"><span aria-hidden="true">▭</span><kbd>Tab</kbd><span>/</span><kbd>M</kbd> Open Mission Tablet</button>
+      </footer>
+    </section>
+
     <div id="cam-hint">W A S D walk · drag look · <b>Tab / M</b> tablet · <b>V</b> 1st / 3rd person</div>
 
     <div id="dpad">

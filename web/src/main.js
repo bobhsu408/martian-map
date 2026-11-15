@@ -981,10 +981,11 @@ function log(msg, cls = '') {
 }
 let alertTimer;
 function showAlert(text, info, ms) {
+  if (!info) setTablet(true); // 緊急狀況：平板自動舉起
   const a = $('alert');
   a.textContent = text;
-  a.className = info ? 'info' : '';
-  if (!info) setTablet(true); // 緊急狀況：平板自動舉起
+  // 展開平板時，提示移到頂欄下方的地圖範圍，避免覆蓋品牌與任務狀態。
+  a.className = `${info ? 'info' : ''}${S.tabletUp ? ' tablet-alert' : ''}`.trim();
   clearTimeout(alertTimer);
   alertTimer = setTimeout(() => a.classList.add('hidden'), ms);
 }
@@ -1245,6 +1246,8 @@ function setTablet(up) {
   const t = $('tablet');
   t.classList.toggle('raised', up);
   t.classList.toggle('lowered', !up);
+  const alert = $('alert');
+  if (!alert.classList.contains('hidden')) alert.classList.toggle('tablet-alert', up);
   if (!up) closeMore();
   if (!up && document.activeElement && t.contains(document.activeElement)) document.activeElement.blur();
   if (up && S.eva) $('step3').scrollIntoView({ block: 'start' }); // EVA 中：直接看到緊急按鈕
@@ -1334,6 +1337,7 @@ function updateTabBar(dt) {
   const bearing = (((90 - (w.heading * 180) / Math.PI) % 360) + 360) % 360;
   $('tb-ring').style.transform = `rotate(${-bearing}deg)`;
   $('tb-heading').textContent = `${String(Math.round(bearing) % 360).padStart(3, '0')}° ${DIR8[Math.round(bearing / 45) % 8]}`;
+  $('sim-heading').textContent = $('tb-heading').textContent;
   // 腳下坡度 + 最近的禁止通行區（坡度 > 門檻或太粗糙）有多近
   const p = w.pos;
   let near = isHazard(p.x, p.y) ? 0 : Infinity;
@@ -1348,8 +1352,18 @@ function updateTabBar(dt) {
   const lvl = near <= 5 || blocked ? 'high' : near <= 20 || slope > 15 ? 'mid' : 'low';
   const hz = $('tb-hazard');
   hz.className = `tb-hazard ${lvl}`;
-  $('tb-haz-text').textContent = lvl === 'high' ? (near === 0 ? 'NO-GO' : 'HIGH') : lvl === 'mid' ? 'CAUTION' : 'LOW';
+  const hazardText = lvl === 'high' ? (near === 0 ? 'NO-GO' : 'HIGH') : lvl === 'mid' ? 'CAUTION' : 'LOW';
+  $('tb-haz-text').textContent = hazardText;
   hz.title = `slope ${slope.toFixed(0)}° · nearest no-go ${Number.isFinite(near) ? `≤ ${near} m` : '> 35 m'}`;
+  const simHazard = $('sim-hazard');
+  simHazard.className = `sim-status terrain ${lvl}`;
+  $('sim-hazard-text').textContent = `TERRAIN: ${hazardText}`;
+  const position = e ? e.est : w.pos;
+  $('sim-position').textContent = `(${position.x.toFixed(0)}, ${position.y.toFixed(0)}) m`;
+  const terrain = lvl === 'low' ? 'Low Risk' : lvl === 'mid' ? 'Caution' : 'High Risk';
+  const terrainValue = $('sim-terrain');
+  terrainValue.textContent = terrain;
+  terrainValue.className = lvl;
   if (e) {
     $('tb-arrow').classList.remove('hidden');
     // 回頭倒數：剩餘 O₂ − 回程時間 − 安全預留
@@ -1509,6 +1523,8 @@ async function boot() {
   $('more-back').onclick = closeMore;
   $('more-close').onclick = closeMore;
   $('map-layers-btn').onclick = () => openMore('tab-layers');
+  $('sim-open-tablet').onclick = () => setTablet(true);
+  $('sim-help').onclick = () => $('intro').classList.remove('hidden');
   const th = S.meta.thresholds;
   $('source').innerHTML = `Terrain: ${S.meta.source}<br>No-go thresholds: slope &gt; ${th.slope_max_deg.toFixed(0)}°, roughness &gt; ${th.rough_max_m.toFixed(2)} m.<br>`
     + `Engine: ${api.kind === 'wasm' ? 'WebAssembly in this browser' : 'local mars-server'} — no network link required.<br>`
