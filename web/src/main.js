@@ -2,6 +2,7 @@
 // Martian Map — offline EVA planner + walkable Mars scene (Three.js).
 // 規劃引擎預設以 WebAssembly 在瀏覽器內執行（src/engine.worker.js）；API 見 docs/API.md。
 import { initI18n } from './i18n.js';
+import { startTour, tourEvent, tourDone, endTour } from './tour.js'; // SI-generated onboarding tour
 import './style.css';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -597,6 +598,7 @@ function setGoal(x, y, name) {
   if (!S.eva && Object.keys(S.routes).length) { clearRoutes(); $('routes').innerHTML = ''; S.selected = null; $('start').disabled = true; }
   log(`Goal set: ${name}`);
   if ($('step1')) updateSteps();
+  tourEvent('goal');
 }
 
 // 太空人（真實位置）、估計位置 + 不確定圈、信標連線
@@ -758,6 +760,7 @@ async function planRoutes() {
     }
     log(`3 routes planned on-board in ${(performance.now() - t0).toFixed(0)} ms`, 'ok');
     selectRoute(S.routes.safe ? 'safe' : Object.keys(S.routes)[0]);
+    tourEvent('planned');
   } catch (e) {
     log(`Planning failed: ${e.message}`, 'bad');
   }
@@ -1432,6 +1435,7 @@ function setTablet(up) {
   if (!up && document.activeElement && t.contains(document.activeElement)) document.activeElement.blur();
   if (up && S.eva) $('step3').scrollIntoView({ block: 'start' }); // EVA 中：直接看到緊急按鈕
   keys.clear();
+  tourEvent('tablet');
 }
 
 // ---- 平板上的小地圖：同一個 3D 場景，用正上方的正交相機畫在平板的地圖區（north up）
@@ -1732,7 +1736,8 @@ async function boot() {
     $('sim-controls-toggle').setAttribute('aria-expanded', String(!collapsed));
     $('sim-controls-toggle').querySelector('.sim-controls-chevron').textContent = collapsed ? '⌄' : '⌃';
   };
-  $('sim-help').onclick = () => $('intro').classList.remove('hidden');
+  let replayTour = false;
+  $('sim-help').onclick = () => { replayTour = true; endTour(); $('intro').classList.remove('hidden'); };
   const th = S.meta.thresholds;
   // Keep source metadata intact for processing, but avoid showing institutional names in the public UI.
   $('source').innerHTML = `Terrain: HiRISE local terrain model<br>No-go thresholds: slope &gt; ${th.slope_max_deg.toFixed(0)}°, roughness &gt; ${th.rough_max_m.toFixed(2)} m.<br>`
@@ -1744,11 +1749,15 @@ async function boot() {
   updateSteps();
   let seen = false;
   try { seen = localStorage.getItem('mm_intro_seen') === '1'; } catch { /* storage unavailable */ }
-  if (!seen && !params.has('nointro')) $('intro').classList.remove('hidden');
+  if ((!seen || !tourDone()) && !params.has('nointro')) $('intro').classList.remove('hidden');
   $('intro-ok').onclick = () => {
     $('intro').classList.add('hidden');
     feedback.unlockAudio();
     try { localStorage.setItem('mm_intro_seen', '1'); } catch { /* ignore */ }
+    if (replayTour || !tourDone()) {
+      replayTour = false;
+      startTour({ tablet: () => !!S.tabletUp, goal: () => !!S.goal, planned: () => Object.keys(S.routes).length > 0 && !S.eva });
+    }
   };
   log(`Loaded ${S.meta.name} (${S.meta.width}×${S.meta.height} @ ${S.meta.cell_m} m); engine ready in ${(build_ms || performance.now() - t0).toFixed(0)} ms`, 'ok');
 }
