@@ -1,5 +1,5 @@
 <!-- SI-generated: written by Claude Code (Anthropic, SI tool) from the git history, the AI usage log and fresh test runs; screenshots are from the app itself. -->
-# 開發小日誌：Martian Map（NASA Space Apps 2026）
+# 開發小日誌：Mars EVA Planner（NASA Space Apps 2026）
 
 > 隊伍：It Worked on Earth!!!　挑戰：Interplanetary Survival Guide: Martian Map
 > 線上 Demo：<https://bobhsu408.github.io/martian-map/>　原始碼：<https://github.com/bobhsu408/martian-map>

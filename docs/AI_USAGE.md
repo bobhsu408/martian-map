@@ -62,4 +62,5 @@ NASA Space Apps 規定提交時必須完整揭露 AI（官方稱 Super Intellige
 | 2026-11-15 20:15 | Claude Code (Claude Opus 5.5) | 將大會中文說明 PDF 壓縮檔移出公開 repo（保留本機、加入 .gitignore），更新開發日誌 | 隊長決定移除 |
 
 | 2026-11-15 22:00 | Claude Code (Claude Opus 5.5) | 對照大會提交 checklist 檢查：README 改為英文版（中文版移到 docs/README.zh.md 並修正連結），修正英文 README 的 HiRISE 地點編號與 Team、補齊 SI 工具；SUBMISSION.md SI 段落補上 Antigravity、ChatGPT、Google Translate、Grammarly | 組員補齊 SI 紀錄後，隊長要求確認提交前還缺哪些資料 |
+| 2026-11-15 22:35 | Claude Code (Claude Opus 5.5) | 專案名稱全面改為 Mars EVA Planner（挑戰題目名稱保留）；對照程式碼修正 SUBMISSION.md 與現況不符處（平板放下時看不到回頭倒數、Gale 區域資料來源、測試與功能清單），改寫成較平實的團隊口吻並加入「測試中設計如何改變」段落；依比賽表單實際欄位重產 SUBMISSION_FORM.txt | 隊長要求改名、確認內容符合現況並降低 AI 感；提供表單頁面原始碼 |
 <!-- 之後每一步都往下新增一列 -->

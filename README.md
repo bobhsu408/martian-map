@@ -1,11 +1,11 @@
 <!-- SI-assisted: first drafted by Hermes Agent (SI tool), rewritten by Claude Code (Anthropic, SI tool) from the project's facts; reviewed by the team. -->
-# Martian Map — Offline EVA Route Planner
+# Mars EVA Planner — offline route planner for Mars walks
 
 **Team It Worked on Earth!!!** (YI-FAN YU, PO-TING HSU) · NASA Space Apps Challenge 2026 · Challenge: *Interplanetary Survival Guide: Martian Map*
 
 **Live demo (runs in the browser, no install):** https://bobhsu408.github.io/martian-map/
 
-Martian Map is an offline navigation tablet for an astronaut walking on Mars. It turns NASA terrain data from Mount Sharp in Gale crater into safe walking routes. For each walk it shows three choices (safe, balanced, science) with distance, time, risk and an estimated radiation dose. During the walk it tracks the **point of no return**, the moment after which the oxygen left is not enough to get home. If a rockfall blocks the path or the suit starts leaking oxygen, it re-plans on the spot or orders a return to base. It finds the astronaut's position from radio beacons instead of GPS. A message to Earth takes 4 to 24 minutes, so every calculation runs on the device.
+Mars EVA Planner is an offline navigation tablet for an astronaut walking on Mars. It turns NASA terrain data from Mount Sharp in Gale crater into safe walking routes. For each walk it shows three choices (safe, balanced, science) with distance, time, risk and an estimated radiation dose. During the walk it tracks the **point of no return**, the moment after which the oxygen left is not enough to get home. If a rockfall blocks the path or the suit starts leaking oxygen, it re-plans on the spot or orders a return to base. It finds the astronaut's position from radio beacons instead of GPS. A message to Earth takes 4 to 24 minutes, so every calculation runs on the device.
 
 A first-time spotlight tour walks new users through raising the tablet, picking a destination and planning routes.
 

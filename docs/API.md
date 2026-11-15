@@ -1,5 +1,5 @@
 <!-- SI-generated: drafted by Claude Code (SI tool); reviewed and maintained by the team. -->
-# Martian Map Engine — API 契約 v1
+# Mars EVA Planner Engine — API 契約 v1
 
 規劃引擎 `mars-core` 有兩種執行方式，介面完全相同：
 - **WebAssembly（預設）**：`mars-wasm` 在瀏覽器的 Web Worker 裡執行，網頁本身就是完整系統，可放在 GitHub Pages；載入後**拔網路也能用**。前端用 `web/src/api.js` 呼叫。

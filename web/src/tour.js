@@ -5,8 +5,8 @@
 const STEPS = [
   {
     targets: ['#sim-open-tablet', '#tab-bar'], on: 'tablet',
-    en: 'Press <b>Tab</b> or <b>M</b> (or click here) to raise your Martian Map tablet.',
-    zh: '按 <b>Tab</b> 或 <b>M</b>（或點這裡）舉起你的 Martian Map 平板。',
+    en: 'Press <b>Tab</b> or <b>M</b> (or click here) to raise your Mars EVA Planner tablet.',
+    zh: '按 <b>Tab</b> 或 <b>M</b>（或點這裡）舉起你的 Mars EVA Planner 平板。',
   },
   {
     targets: ['#step1'], on: 'goal', tablet: true,

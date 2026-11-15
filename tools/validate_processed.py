@@ -133,7 +133,7 @@ def validate(directory: Path) -> dict[str, object]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate processed Martian Map DEM files.")
+    parser = argparse.ArgumentParser(description="Validate processed Mars EVA Planner DEM files.")
     parser.add_argument("directory", type=Path, help="directory containing dem.f32/meta.json")
     args = parser.parse_args()
     try:

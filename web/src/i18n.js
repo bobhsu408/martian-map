@@ -9,7 +9,7 @@ const EXACT = {
   'Start': '開始',
   'FREE WALK': '自由行走',
   'ROUTE READY': '路線已就緒',
-  'Tab / M — open Martian Map': 'Tab / M — 打開 Martian Map',
+  'Tab / M — open Mars EVA Planner': 'Tab / M — 打開 Mars EVA Planner',
   'Tab / M — start the EVA on the tablet': 'Tab / M — 在平板上開始 EVA',
   'Terrain danger': '地形危險度',
   'NO-GO': '禁區', 'HIGH': '高', 'CAUTION': '注意', 'LOW': '低',
@@ -48,7 +48,7 @@ const EXACT = {
   'Guidance feedback': '導航回饋', '🔊 Sound': '🔊 聲音', '📳 Vibration': '📳 震動',
   '1 pulse = steer left · 2 pulses = steer right · faster = further off route · long buzz = hazard · SOS = return now':
     '震 1 下 = 往左修正 · 震 2 下 = 往右修正 · 越快 = 偏越遠 · 長震 = 危險 · SOS = 立刻返航',
-  'Martian Map · on-board · north up': 'Martian Map · 本機 · 上方為北',
+  'Mars EVA Planner · on-board · north up': 'Mars EVA Planner · 本機 · 上方為北',
   'ON ROUTE': '在路線上', 'RETURNING TO BASE · ON ROUTE': '返航中 · 在路線上',
   '⚠ RETURN TO BASE NOW — O₂ AT LIMIT': '⚠ 立刻返回基地 — O₂ 已達極限',
   'RE-PLANNING ON-BOARD…': '本機重新規劃中…', 'NO-GO TERRAIN AHEAD': '前方是禁區地形',
@@ -165,7 +165,7 @@ const PATTERNS = [
 // 整段含 HTML 標籤的區塊，直接整段替換
 const BLOCKS = {
   '#intro .intro-card p:nth-of-type(1)': '地面使用高解析度軌道地形資料。用 <b>W A S D</b> 或方向鍵走路，拖曳滑鼠看四周，<b>V</b> 切換第一／第三人稱。',
-  '#intro .intro-card p:nth-of-type(2)': '你手上的平板就是 <b>Martian Map</b>。平時顯示指南針和地面危險度，按 <b>Tab</b> 或 <b>M</b> 舉起平板：',
+  '#intro .intro-card p:nth-of-type(2)': '你手上的平板就是 <b>Mars EVA Planner</b>。平時顯示指南針和地面危險度，按 <b>Tab</b> 或 <b>M</b> 舉起平板：',
   '#intro ol': '<li><b>選擇目的地</b> — 科學點，或直接點地圖。</li><li><b>選擇路線</b> — 安全、平衡或科學。</li><li><b>出艙 EVA</b> — 自己走或用自動導航，再試試緊急狀況。</li>',
   '#intro .hint': '所有運算都在這個瀏覽器裡完成 — 不需要和地球連線。',
   '#cam-hint': 'W A S D 走路 · 拖曳看四周 · <b>Tab / M</b> 平板 · <b>V</b> 第一／第三人稱',

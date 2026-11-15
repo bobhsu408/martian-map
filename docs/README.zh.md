@@ -1,5 +1,5 @@
 <!-- SI-assisted: Chinese README written by a team member with Codex (OpenAI, SI tool); kept for the team. The English README is ../README.md. -->
-# Martian Map
+# Mars EVA Planner
 
 火星全球／Mount Sharp 的離線地圖展示與 EVA 路徑規劃原型。
 
