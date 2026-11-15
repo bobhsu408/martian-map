@@ -123,6 +123,12 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   position: absolute; top: 100px; left: 28px; width: 278px; overflow: hidden;
   background: rgba(18,24,32,.87); border: 1px solid #65717e; border-radius: 18px; backdrop-filter: blur(10px); pointer-events: auto;
 }
+.sim-controls .sim-controls-toggle { box-sizing: border-box; width: 100%; min-height: 54px; display: flex; align-items: center; gap: 8px; padding: 15px 18px; margin: 0 0 8px; border: 0; border-bottom: 1px solid #46515e; border-radius: 0; background: transparent; color: var(--text); text-align: left; font: 800 16px/1.2 inherit; cursor: pointer; }
+.sim-controls-toggle > span:first-child { flex: 0 0 auto; }
+.sim-controls-chevron { margin-left: auto; color: var(--muted); }
+.sim-controls.collapsed { width: 278px; }
+.sim-controls.collapsed > :not(.sim-controls-toggle) { display: none; }
+.sim-controls.collapsed .sim-controls-toggle { margin: 0; padding: 15px 18px; border-bottom: 0; }
 .sim-controls h2 { margin: 0 0 10px; padding: 17px 20px; border-bottom: 1px solid #46515e; font-size: 17px; }
 .sim-controls > div { display: flex; align-items: center; gap: 9px; min-height: 38px; padding: 0 20px; color: var(--text); font-size: 15px; }
 .sim-controls > div span:last-child { margin-left: 8px; color: var(--text); }
@@ -451,6 +457,14 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #alert.tablet-alert { top: 114px; left: 63%; max-width: min(460px, 38vw); text-align: center; z-index: 35; }
 
 /* ========== 3D LABELS ========== */
+.site-marker { pointer-events: auto; display: inline-flex; align-items: center; gap: 7px; width: auto; min-height: 36px; padding: 5px 8px; background: rgba(11,15,20,.92); border: 1px solid #1688d4; border-radius: 9px; color: #f3f6fa; font-size: 13px; white-space: nowrap; }
+.site-marker-icon { color: #35a4f0; font-size: 20px; line-height: 1; }
+.site-marker.rover, .site-marker.relay { border-color: #ff9f43; }
+.site-marker.rover .site-marker-icon, .site-marker.relay .site-marker-icon { color: #ff9f43; }
+.site-marker-name { display: none; }
+.site-marker.near .site-marker-name, .site-marker.selected .site-marker-name, .site-marker:focus-visible .site-marker-name { display: inline; }
+.site-list-row { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.site-list-row span { color: var(--muted); font-size: 13px; }
 .label3d {
   color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 4px;
   background: rgba(0, 0, 0, 0.6); border: 1px solid rgba(255, 255, 255, 0.2); white-space: nowrap;

@@ -504,6 +504,34 @@ function label(text, cls, v) {
   return o;
 }
 const beaconTop = {};
+const siteLabels = new Set();
+function siteLabel(name, icon, kind, position, onSelect) {
+  const element = document.createElement('button');
+  element.type = 'button';
+  element.className = `site-marker ${kind}`;
+  element.setAttribute('aria-label', name);
+  const symbol = document.createElement('span'); symbol.className = 'site-marker-icon'; symbol.textContent = icon;
+  const text = document.createElement('span'); text.className = 'site-marker-name'; text.textContent = name;
+  element.append(symbol, text);
+  element.addEventListener('pointerdown', (event) => event.stopPropagation());
+  element.addEventListener('click', (event) => {
+    event.stopPropagation();
+    const selected = !element.classList.contains('selected');
+    for (const item of siteLabels) item.element.classList.remove('selected');
+    element.classList.toggle('selected', selected);
+    if (selected && onSelect) onSelect();
+  });
+  const marker = new CSS2DObject(element);
+  marker.position.copy(position);
+  marker.userData.siteMarker = true;
+  scene.add(marker); siteLabels.add(marker);
+  return marker;
+}
+function updateSiteLabels() {
+  for (const marker of siteLabels) {
+    marker.element.classList.toggle('near', camera.position.distanceTo(marker.position) < 250);
+  }
+}
 function addMarkers() {
   const [bx, by] = S.meta.base;
   const hab = new THREE.Group();
@@ -512,14 +540,28 @@ function addMarkers() {
   hab.add(dome, ring);
   hab.position.copy(groundV(bx, by, 0));
   scene.add(hab);
-  label('BASE / HABITAT', 'base', groundV(bx, by, 40));
+  siteLabel('Habitat · Base', '⌂', 'hab', groundV(bx, by, 40));
   for (const t of S.meta.targets) {
     const m = new THREE.Mesh(new THREE.OctahedronGeometry(6), new THREE.MeshLambertMaterial({ color: '#4dd6ff', emissive: '#0a3a4a' }));
     m.position.copy(groundV(t.x, t.y, 16));
     scene.add(m);
-    label(t.name, 'target', groundV(t.x, t.y, 34));
+    siteLabel(t.name, '⚗', 'science', groundV(t.x, t.y, 34), () => {
+      if (S.eva) return;
+      $('target').value = t.id;
+      $('target-desc').textContent = t.desc;
+      setGoal(t.x, t.y, t.name);
+      updateSteps();
+    });
   }
   for (const b of S.meta.beacons) addBeaconMarker(b);
+  const list = $('site-list');
+  for (const item of [...S.meta.beacons, ...S.meta.targets]) {
+    const row = document.createElement('div'); row.className = 'site-list-row';
+    const name = document.createElement('strong'); name.textContent = item.label || item.name || item.id;
+    const detail = document.createElement('span');
+    detail.textContent = `${item.kind ? item.kind.toUpperCase() : 'Science candidate'} · (${item.x.toFixed(0)}, ${item.y.toFixed(0)}) m`;
+    row.append(name, detail); list.appendChild(row);
+  }
 }
 const beaconTopMesh = {};
 /** 信標標記（柱子＋燈），回傳可整組移除的物件。 */
@@ -534,7 +576,11 @@ function addBeaconMarker(b, color) {
   scene.add(g);
   beaconTop[b.id] = top.position.clone();
   beaconTopMesh[b.id] = top;
-  g.add(label(`${lora ? 'LoRa' : 'UWB'} · ${b.label || b.id}`, b.kind, groundV(b.x, b.y, hgt + 10)));
+  const kind = b.id === 'hab' ? 'hab' : b.id === 'rover' ? 'rover' : b.id === 'relay' ? 'relay' : 'uwb';
+  const icon = { hab: '⌂', rover: '🚙', relay: '⚑', uwb: '◆' }[kind];
+  const title = kind === 'rover' ? 'Rover · Parked' : kind === 'relay' ? 'Relay · LoRa' : kind === 'hab' ? 'Habitat · LoRa' : (b.label || b.id);
+  const marker = siteLabel(title, icon, kind, groundV(b.x, b.y, hgt + 10));
+  g.userData.siteLabel = marker;
   return g;
 }
 let goalMarker;
@@ -1073,6 +1119,7 @@ function clearBeaconEvents() {
   S.linkLost = false;
   BASE_LINK_IDS.forEach((id) => setBeaconDim(id, false));
   for (const d of S.deployed) {
+    if (d.obj.userData.siteLabel) { siteLabels.delete(d.obj.userData.siteLabel); scene.remove(d.obj.userData.siteLabel); d.obj.userData.siteLabel.element.remove(); }
     d.obj.traverse((o) => o.element?.remove());
     scene.remove(d.obj);
     delete beaconTop[d.b.id]; delete beaconTopMesh[d.b.id];
@@ -1679,6 +1726,12 @@ async function boot() {
   $('more-close').onclick = closeMore;
   $('map-layers-btn').onclick = () => openMore('tab-layers');
   $('sim-open-tablet').onclick = () => setTablet(true);
+  $('sim-controls-toggle').onclick = () => {
+    const panel = document.querySelector('.sim-controls');
+    const collapsed = panel.classList.toggle('collapsed');
+    $('sim-controls-toggle').setAttribute('aria-expanded', String(!collapsed));
+    $('sim-controls-toggle').querySelector('.sim-controls-chevron').textContent = collapsed ? '⌄' : '⌃';
+  };
   $('sim-help').onclick = () => $('intro').classList.remove('hidden');
   const th = S.meta.thresholds;
   // Keep source metadata intact for processing, but avoid showing institutional names in the public UI.
@@ -1710,6 +1763,7 @@ renderer.setAnimationLoop(() => {
   // 拉遠時隱藏 3D 標籤，避免全部擠在一起
   labels.domElement.style.display = S.inGlobe || (S.view === '3d' && S.cam === 'orbit' && camera.position.distanceTo(controls.target) > 9000) ? 'none' : '';
   renderer.render(scene, camera);
+  updateSiteLabels();
   labels.render(scene, camera);
   renderMini();
   updateTabBar(dt);

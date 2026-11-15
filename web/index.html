@@ -154,6 +154,7 @@
             <button class="more-tab" data-tab="tab-globe"><span>🌍</span> Mars Globe</button>
             <button class="more-tab" data-tab="tab-vdist"><span>🔭</span> View Distance</button>
             <button class="more-tab" data-tab="tab-feedback"><span>🔊</span> Sound &amp; Vibration</button>
+            <button class="more-tab" data-tab="tab-sites"><span>◇</span> Sites &amp; Beacons</button>
             <button class="more-tab" data-tab="tab-log"><span>📋</span> Mission Log</button>
           </nav>
           <div class="more-content">
@@ -214,6 +215,11 @@
               <div class="hint" style="margin-top:8px">1 pulse = steer left · 2 pulses = steer right · faster = further off route · long buzz = hazard · SOS = return now</div>
             </div>
             <!-- Mission Log -->
+            <div class="more-pane" id="tab-sites">
+              <h3>Sites &amp; Beacons</h3>
+              <p class="pane-desc">Simulated sites and beacon positions, in local metres.</p>
+              <div id="site-list"></div>
+            </div>
             <div class="more-pane" id="tab-log">
               <h3>Mission Log</h3>
               <div id="log"></div>
@@ -268,7 +274,7 @@
       </header>
 
       <aside class="sim-controls" aria-label="EVA controls">
-        <h2><span aria-hidden="true">⚑</span> EVA SIMULATION</h2>
+        <button id="sim-controls-toggle" class="sim-controls-toggle" type="button" aria-expanded="true"><span aria-hidden="true">⚑</span> EVA SIMULATION <span class="sim-controls-chevron">⌃</span></button>
         <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move</span></div>
         <div><span class="control-icon" aria-hidden="true">◉</span><span>Drag</span><span>Look around</span></div>
         <div><kbd>Tab</kbd><span>/</span><kbd>M</kbd><span>Open tablet</span></div>
