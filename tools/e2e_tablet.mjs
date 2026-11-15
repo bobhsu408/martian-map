@@ -62,8 +62,12 @@ try {
   await key('Tab', 'Tab');
   await sleep(300);
   console.log('tablet raised:', await evalJs("document.getElementById('tablet').classList.contains('raised')"));
+  // pick the first science target (the UI requires a goal before planning)
+  await evalJs(`(()=>{const s=document.getElementById('target'); s.value=window.__mm.S.meta.targets[0].id; s.dispatchEvent(new Event('change'));})()`);
+  console.log('goal:', await evalJs('JSON.stringify(window.__mm.S.goal)'));
   await click('plan');
   await sleep(3000);
+  console.log('routes:', await evalJs('Object.keys(window.__mm.S.routes).join(",")'), 'eva after start btn enabled:', await evalJs("!document.getElementById('start').disabled"));
   await shot('t2_tablet_routes.png');
   await click('start');
   await sleep(3500);
