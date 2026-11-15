@@ -1,3 +1,4 @@
+// SI-generated: Claude Code (Anthropic, SI tool); processed-data list extended by the team.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

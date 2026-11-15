@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SI-assisted: written with Codex (OpenAI, SI tool) at a team member's direction; the team reviewed and ran it.
 """Prepare a compact global Mars map from a PDS3 MOLA MEGDR topography file.
 
 The global layer is for overview and map navigation, not astronaut-scale route

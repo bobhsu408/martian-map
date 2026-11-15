@@ -99,20 +99,24 @@ Next steps:
 
 ## Use of SI (AI)
 
-> **TODO — the team writes this section in its own words.** The space below only lists the facts it should cover. The full step-by-step log is in `docs/AI_USAGE.md` (Chinese) and `engDocs/SI_usage.md` (English).
+<!-- SI-assisted: this section was drafted by Claude Code from the team's AI usage log at the team's request; the team reviews and edits it. -->
+We used SI tools heavily, and we kept a log of every step (`docs/AI_USAGE.md` in Chinese, `engDocs/SI_usage.md` in English).
 
-Facts to cover:
-- Tools used:
-  - Claude Code (Anthropic): most of the code — Rust engine, WebAssembly build, Three.js interface, tests — plus documentation and this draft.
-  - Codex: explanations, research on Mars map data, and the 2D map work by one team member.
-- What the team did:
-  - chose the problem, the site and the offline-EVA concept;
-  - designed the experience (handheld tablet, idle compass and danger colour, first-person view, dropping beacons after losing the base link, making the point of no return visible);
-  - found and preprocessed the NASA data and built the zoomable 2D map;
-  - wrote `hazard_mask` by hand;
-  - tested every change and decided what to merge.
-- Every SI-generated file is labelled on its first line (`SI-generated`).
-- No SI-generated images or video were used. All terrain and imagery are NASA data.
+**Tools we used**
+- **Claude Code (Anthropic)** wrote most of the code: the Rust route-planning engine, its WebAssembly build, the Three.js interface, the onboarding tour, the automated tests and the deployment setup. It also drafted documentation and this submission text.
+- **Codex (OpenAI)** explained the tech stack to one of us, researched which Mars map data to use, wrote the Python tools that preprocess the NASA data, built the zoomable 2D map, and rebuilt the tablet interface from reference designs we chose.
+- **Hermes Agent** (a free local model) drafted the first README from an outline we gave it.
+
+**What we did ourselves**
+- We chose the problem, the site (Mount Sharp, Gale crater) and the idea of a fully offline EVA tablet.
+- We designed how it should feel: a handheld tablet, a compass and danger colour when idle, first-person walking, dropping radio beacons after losing the base link, and making the point of no return visible.
+- We picked the NASA datasets, ran the preprocessing, and checked the results.
+- We wrote the `hazard_mask` logic in the engine by hand.
+- We tested every change in the browser, reported what felt wrong, and decided what to keep and merge.
+
+**Labelling**
+- Every file written or assisted by SI says so on its first line (`SI-generated` or `SI-assisted`).
+- We used no SI-generated images, video or audio. All terrain and imagery come from NASA data, and the screenshots are from the app itself.
 
 ---
 

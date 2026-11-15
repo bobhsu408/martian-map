@@ -1,3 +1,4 @@
+<!-- SI-assisted: written with Codex (OpenAI, SI tool) at a team member's direction; the team reviewed it. -->
 # HiRISE DTM 前處理與分層導航地圖執行企畫書
 
 ## 1. 目的

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SI-assisted: written with Codex (OpenAI, SI tool) at a team member's direction; the team reviewed and ran it.
 """Convert a HiRISE PDS3 DTM IMG into the Martian Map processed format.
 
 The output is intentionally dependency-light apart from NumPy:

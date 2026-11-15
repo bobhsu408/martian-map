@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SI-assisted: written with Codex (OpenAI, SI tool) at a team member's direction; the team reviewed and ran it.
 """Validate a processed HiRISE DEM and its provenance."""
 
 from __future__ import annotations

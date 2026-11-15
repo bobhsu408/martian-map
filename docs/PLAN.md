@@ -1,3 +1,4 @@
+<!-- SI-generated: drafted by Claude Code (Anthropic, SI tool); the team chose the architecture and division of work and reviewed it. -->
 # 開發計畫：Martian Map 離線 EVA 任務規劃系統（Rust 後端 + Three.js 前端）
 
 ## Context

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SI-assisted: written with Codex (OpenAI, SI tool) at a team member's direction; the team reviewed and ran it.
 """Stitch the official ASU/NASA Viking global color mosaic thumbnails.
 
 The source is a simple-cylindrical global mosaic split into four longitude

@@ -48,6 +48,8 @@ try {
   const viewDist = (v) => evalJs(`(()=>{const r=document.getElementById('view-dist'); r.value='${v}'; r.dispatchEvent(new Event('input'));})()`);
   await sleep(1000);
   await shot('01_loaded.png');
+  // the UI needs a goal before planning: pick the first science target
+  await evalJs(`(()=>{const s=document.getElementById('target'); s.value=window.__mm.S.meta.targets[0].id; s.dispatchEvent(new Event('change'));})()`);
   await click('plan');
   await sleep(2500);
   await shot('02_routes.png');
