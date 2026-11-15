@@ -135,34 +135,57 @@ Labelling:
 - NASA MGS MOC Atlas (256 px/deg, 120-150 E, 30 S-0): regional image of Gale crater between the globe and the site.
 - Curiosity RAD surface dose rate (published value): radiation dose estimate per route.
 
-Data links:
-- HiRISE DTMs and orthophotos (University of Arizona / NASA / JPL): https://www.uahirise.org/dtm/
-- MGS MOLA MEGDR (NASA PDS Geosciences Node): https://pds-geosciences.wustl.edu/missions/mgs/megdr.html
-- Viking MDIM colour mosaic (ASU / NASA): https://www.mars.asu.edu/data/mdim_color/
-- MOC Atlas (ASU / NASA): https://www.mars.asu.edu/data/moc_256/
+Data links (Link Text  |  URL):
+HiRISE DTM DTEEC_001488_1750_001752_1750_U02 and orthophoto (Mount Sharp, Gale crater)  |  https://www.uahirise.org/dtm/dtm.php?ID=PSP_001488_1750
+HiRISE DTM DTEEC_019698_1750_019988_1750_U01 (NW Mount Sharp, second test site)  |  https://www.uahirise.org/dtm/dtm.php?ID=ESP_019698_1750
+MGS MOLA MEGDR global elevation (globe and Gale crater region)  |  https://pds-geosciences.wustl.edu/missions/mgs/megdr.html
+Viking MDIM colour mosaic (global base map)  |  https://www.mars.asu.edu/data/mdim_color/
+MGS MOC Wide Angle Atlas (Gale crater regional image)  |  https://www.mars.asu.edu/data/moc_256/
+Curiosity RAD surface radiation dose rate (Hassler et al. 2014)  |  https://doi.org/10.1126/science.1244797
 
 
 ==================================================
 [8] Space Agency Partner Data and Other References
 ==================================================
-Space agency partner data: none used (all data is NASA data, listed above).
+Format: one entry per line = Link Text  |  URL   (type the Link Text and the URL into separate boxes)
 
-Papers:
-- McEwen, A. S., et al. (2007). Mars Reconnaissance Orbiter's High Resolution Imaging Science Experiment (HiRISE). JGR Planets, 112, E05S02.
-- Kirk, R. L., et al. (2008). Ultrahigh resolution topographic mapping of Mars with MRO HiRISE stereo images. JGR Planets, 113, E00A24.
-- Smith, D. E., et al. (2001). Mars Orbiter Laser Altimeter: Experiment summary after the first year of global mapping of Mars. JGR, 106(E10).
-- Hassler, D. M., et al. (2014). Mars' surface radiation environment measured with the Mars Science Laboratory's Curiosity rover. Science, 343(6169).
-- Hart, P. E., Nilsson, N. J., & Raphael, B. (1968). A formal basis for the heuristic determination of minimum cost paths. IEEE Trans. SSC, 4(2).
-- Felzenszwalb, P. F., & Huttenlocher, D. P. (2012). Distance transforms of sampled functions. Theory of Computing, 8.
-- Tobler, W. (1993). Three presentations on geographical analysis and modeling. NCGIA Technical Report 93-1.
-- Horn, B. K. P. (1981). Hill shading and the reflectance map. Proc. IEEE, 69(1).
+Space agency partner data: none (all our data is NASA data, listed in [7]).
 
-Software:
-- Three.js, Vite, Rust, wasm-bindgen, axum, tokio, rayon, serde, numpy, Pillow.
+Papers (methods and science):
+HiRISE camera (McEwen et al. 2007)  |  https://doi.org/10.1029/2005JE002605
+HiRISE stereo terrain models (Kirk et al. 2008)  |  https://doi.org/10.1029/2007JE003000
+MOLA global mapping (Smith et al. 2001)  |  https://doi.org/10.1029/2000JE001364
+Curiosity RAD surface radiation (Hassler et al. 2014)  |  https://doi.org/10.1126/science.1244797
+A* search algorithm (Hart, Nilsson & Raphael 1968)  |  https://doi.org/10.1109/TSSC.1968.300136
+Distance transforms (Felzenszwalb & Huttenlocher 2012)  |  https://doi.org/10.4086/toc.2012.v008a019
+Slope from elevation, Horn's method (Horn 1981)  |  https://doi.org/10.1109/PROC.1981.11918
+Tobler's hiking function (walking speed vs slope)  |  https://en.wikipedia.org/wiki/Tobler%27s_hiking_function
 
-SI tools: Claude Code (Anthropic), Codex (OpenAI), Antigravity AI, Hermes Agent, ChatGPT, Google Translate, Grammarly (details in the Use of SI field).
+Open-source code we used:
+Three.js (3D rendering)  |  https://threejs.org/
+Vite (web build tool)  |  https://vite.dev/
+Rust programming language  |  https://www.rust-lang.org/
+wasm-bindgen (Rust to WebAssembly)  |  https://wasm-bindgen.github.io/wasm-bindgen/
+axum (local HTTP server)  |  https://github.com/tokio-rs/axum
+Tokio (async runtime)  |  https://tokio.rs/
+Rayon (parallel computing)  |  https://github.com/rayon-rs/rayon
+Serde (JSON)  |  https://serde.rs/
+pathfinding crate (reference solver in tests)  |  https://github.com/evenfurther/pathfinding
+proptest (property-based tests)  |  https://github.com/proptest-rs/proptest
+NumPy (data preprocessing)  |  https://numpy.org/
+Pillow (image preprocessing)  |  https://python-pillow.github.io/
 
-Source code: https://github.com/bobhsu408/martian-map
+SI tools (details in the Use of SI field):
+Claude Code (Anthropic)  |  https://www.claude.com/product/claude-code
+Codex (OpenAI)  |  https://openai.com/codex/
+Google Antigravity  |  https://antigravity.google/
+Hermes Agent (Nous Research)  |  https://github.com/NousResearch/hermes-agent
+ChatGPT  |  https://chatgpt.com/
+Google Translate  |  https://translate.google.com/
+Grammarly  |  https://www.grammarly.com/
+
+Our source code:
+Martian Map source code (GitHub)  |  https://github.com/bobhsu408/martian-map
 
 
 ==================================================
